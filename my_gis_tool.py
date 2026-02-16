@@ -80,7 +80,7 @@ with st.sidebar:
     search_radius = st.slider("Search Radius (Miles)", 0.1, 2.0, 0.25)
     
     st.divider()
-    show_oob = st.checkbox("Show 'Out of Bounds' (Gray Dots)", value=True)
+    show_oob = st.checkbox("Show 'Out of Bounds' (Blue Dots)", value=True)
 
 st.title("📍 Phase I ESA: Final Mapping Agent")
 st.markdown("Automated sorting of **Mappable Sites** vs. **Orphans (NGCs)**.")
@@ -211,13 +211,13 @@ if uploaded_files and api_key:
                     pickable=True
                 ))
             
-            # Layer 3: Out of Bounds (Gray Dots - Optional)
+            # Layer 3: Out of Bounds (Blue Dots) - CHANGED FROM GRAY TO BLUE
             if show_oob and oob:
                 layers.append(pdk.Layer(
                     'ScatterplotLayer',
                     data=pd.DataFrame(oob),
                     get_position='[mapped_lon, mapped_lat]',
-                    get_color='[150, 150, 150, 150]', # Gray
+                    get_color='[0, 100, 255, 150]', # Blue [R, G, B, Opacity]
                     get_radius=60,
                     pickable=True
                 ))
@@ -226,21 +226,31 @@ if uploaded_files and api_key:
             st.subheader("🗺️ Site Map")
             
             # Determine Zoom Level
-            # If we have matches, center the map nicely.
             view_state = pdk.ViewState(latitude=site_lat, longitude=site_lon, zoom=13)
             
             st.pydeck_chart(pdk.Deck(
                 map_style=None, # Default style (Reliable)
                 initial_view_state=view_state,
                 layers=layers,
-                tooltip={"text": "{address}\nDistance: {miles_from_site} mi"}
+                tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}"}
             ))
 
             # --- 6. NGC TABLE (Live View) ---
             if ngcs:
                 st.subheader("❌ Orphan (NGC) List")
-                st.warning("The following sites were identified as Orphans (Vague or Unmappable). Please review for the report.")
-                st.dataframe(pd.DataFrame(ngcs)[['address', 'reason']], use_container_width=True)
+                st.warning("The following sites were identified as Orphans (Vague or Unmappable).")
+                
+                # Create a clean display DF that includes Site ID, Zip, City if they exist
+                df_ngc = pd.DataFrame(ngcs)
+                desired_cols = ['site id', 'site_id', 'city', 'zip', 'zip code', 'zipcode', 'address', 'reason']
+                # Select only columns that actually exist in the file
+                final_cols = [c for c in desired_cols if c in df_ngc.columns]
+                
+                # If none of the specific columns exist, default to address/reason
+                if not final_cols:
+                    final_cols = ['address', 'reason']
+                    
+                st.dataframe(df_ngc[final_cols], use_container_width=True)
 
             # --- 7. EXPORT ---
             output = io.BytesIO()
