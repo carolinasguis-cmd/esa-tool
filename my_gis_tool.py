@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
-from geopy.geocoders import Nominatim
+from geopy.geocoders import ArcGIS
 from geopy.distance import geodesic
 import io
 import pydeck as pdk
 import time
-import re
 
 def is_vague_address(addr):
     """
@@ -33,20 +32,20 @@ def is_vague_address(addr):
         
     return False
 
-def clean_address_string(addr_raw):
+def clean_string(val):
     """Basic cleanup to remove Excel artifacts."""
-    if pd.isna(addr_raw): return ""
-    addr = str(addr_raw).strip()
-    if addr.lower() == 'nan': return ""
-    if addr.endswith('.0'): addr = addr[:-2]
-    return " ".join(addr.split())
+    if pd.isna(val): return ""
+    clean_val = str(val).strip()
+    if clean_val.lower() == 'nan': return ""
+    if clean_val.endswith('.0'): clean_val = clean_val[:-2]
+    return " ".join(clean_val.split())
 
 st.set_page_config(page_title="GIS Phase I ESA Agent", layout="wide", page_icon="📍")
 
-# --- 1. SIDEBAR INPUTS (No API Key Needed!) ---
+# --- 1. SIDEBAR INPUTS ---
 with st.sidebar:
     st.header("⚙️ Project Settings")
-    st.success("✅ Using Free OpenStreetMap Engine")
+    st.success("✅ Using Free ArcGIS Engine (Fast & State-Aware)")
     
     st.divider()
     st.subheader("📍 Target Property")
@@ -57,7 +56,7 @@ with st.sidebar:
     st.divider()
     show_oob = st.checkbox("Show 'Out of Bounds' (Blue Dots)", value=True)
 
-st.title("📍 Phase I ESA: Free Mapping Agent")
+st.title("📍 Phase I ESA: Fast & Free Mapping Agent")
 st.markdown("Automated sorting of **Mappable Sites** vs. **Orphans (NGCs)**.")
 
 uploaded_files = st.file_uploader("📂 Drop ESA Files Here (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True)
@@ -65,18 +64,10 @@ uploaded_files = st.file_uploader("📂 Drop ESA Files Here (Excel/CSV)", type=[
 # --- 2. MAIN ANALYSIS ENGINE ---
 if uploaded_files:
     if st.button("🚀 Run Analysis"):
-        # Initialize Free OpenStreetMap Geocoder
-        geolocator = Nominatim(user_agent="phase_i_esa_free_mapper")
+        geolocator = ArcGIS()
         site_coords = (site_lat, site_lon)
-        
-        # Setup viewbox to bias results to the project area
-        viewbox = [
-            (site_lat + 0.2, site_lon - 0.2), 
-            (site_lat - 0.2, site_lon + 0.2)
-        ]
 
         all_data = []
-        # Load all files
         for f in uploaded_files:
             try:
                 if f.name.endswith('.csv'): df = pd.read_csv(f)
@@ -97,21 +88,39 @@ if uploaded_files:
 
             for i, (index, row) in enumerate(master_df.iterrows()):
                 prog_bar.progress((i + 1) / total_rows)
-                status_text.text(f"Processing Record {i+1} of {total_rows} (1 sec delay per address)...")
+                status_text.text(f"Processing Record {i+1} of {total_rows}...")
                 
+                # Extract address components
                 raw_addr = row.get('address', '')
-                addr = clean_address_string(raw_addr)
+                addr = clean_string(raw_addr)
                 
-                # STEP 1: ORPHAN CHECK
+                # STEP 1: ORPHAN CHECK (Only test the base address string)
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Intersection"
                     ngcs.append(row)
                     continue 
 
-                # STEP 2: GEOCODING
+                # STEP 2: BUILD FULL ADDRESS FOR GEOCODING
+                city = clean_string(row.get('city', ''))
+                state = clean_string(row.get('state', ''))
+                
+                # Find zip code regardless of how the column is named
+                zip_code = ''
+                for z_col in ['zip', 'zip code', 'zipcode', 'zip_code']:
+                    if z_col in row:
+                        zip_code = clean_string(row[z_col])
+                        break
+                
+                # Glue them together safely
+                full_search_address = addr
+                if city: full_search_address += f", {city}"
+                if state: full_search_address += f", {state}"
+                if zip_code: full_search_address += f" {zip_code}"
+
+                # STEP 3: GEOCODING
                 try:
-                    loc = geolocator.geocode(addr, viewbox=viewbox, bounded=True, timeout=10)
+                    loc = geolocator.geocode(full_search_address, timeout=10)
                     
                     if loc:
                         found_coords = (loc.latitude, loc.longitude)
@@ -120,7 +129,8 @@ if uploaded_files:
                         row['mapped_lat'] = loc.latitude
                         row['mapped_lon'] = loc.longitude
                         row['miles_from_site'] = round(dist, 3)
-                        row['osm_address'] = loc.address
+                        row['arcgis_address'] = loc.address
+                        row['search_string_used'] = full_search_address # Helpful for debugging
                         
                         if dist <= search_radius:
                             row['status'] = "Match"
@@ -130,7 +140,7 @@ if uploaded_files:
                             oob.append(row)
                     else:
                         row['status'] = "NGC (Not Found)"
-                        row['reason'] = "Address not found in OpenStreetMap"
+                        row['reason'] = "Address not found by ArcGIS"
                         ngcs.append(row)
                         
                 except Exception as e:
@@ -138,8 +148,7 @@ if uploaded_files:
                     row['reason'] = str(e)
                     ngcs.append(row)
                 
-                # CRITICAL: 1.1 second pause to stay free and avoid being blocked by OSM
-                time.sleep(1.1)
+                time.sleep(0.1)
 
             prog_bar.empty()
             status_text.empty()
@@ -201,7 +210,7 @@ if uploaded_files:
                 st.warning("The following sites were identified as Orphans (Vague or Unmappable).")
                 
                 df_ngc = pd.DataFrame(ngcs)
-                desired_cols = ['site id', 'site_id', 'city', 'zip', 'zip code', 'zipcode', 'address', 'reason']
+                desired_cols = ['site id', 'site_id', 'city', 'state', 'zip', 'zip code', 'address', 'reason']
                 final_cols = [c for c in desired_cols if c in df_ngc.columns]
                 if not final_cols: final_cols = ['address', 'reason']
                     
