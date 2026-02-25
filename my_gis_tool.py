@@ -5,19 +5,27 @@ from geopy.distance import geodesic
 import io
 import pydeck as pdk
 import time
+import re
 
 def is_vague_address(addr):
     addr = str(addr).upper().strip()
+    
+    # Updated: Made 'CORNER' much stricter so it doesn't block "Peachtree Corners"
     vague_terms = [
-        'INTERSEC', 'CORNER', ' OF ', 
-        'NORTH OF', 'SOUTH OF', 'EAST OF', 'WEST OF',
-        '1 MI', '2 MI', '3 MI', 'MILE', 
-        'NEAR', 'ADJACENT', 'BEHIND', 'VICINITY', 
-        'APPROX', '&' 
+        'INTERSEC', 'CORNER OF', 'NORTH OF', 'SOUTH OF', 'EAST OF', 'WEST OF',
+        '1 MI', '2 MI', '3 MI', 'MILE', 'NEAR ', 'ADJACENT', 'BEHIND ', 'VICINITY', 
+        'APPROX '
     ]
     if any(term in addr for term in vague_terms): return True
+    
+    # Make sure we don't crash if the address is empty
+    if not addr: return True
+        
     first_word = addr.split(' ')[0]
-    if not any(char.isdigit() for char in first_word): return True
+    # Allow letters in the first word if it's a highway (like "HWY" or "US")
+    if not any(char.isdigit() for char in first_word) and first_word not in ['HWY', 'US', 'I-']: 
+        return True
+        
     return False
 
 def clean_string(val):
@@ -27,23 +35,37 @@ def clean_string(val):
     if clean_val.endswith('.0'): clean_val = clean_val[:-2]
     return " ".join(clean_val.split())
 
+def scrub_address_for_arcgis(addr):
+    """Aggressively cleans addresses so ArcGIS doesn't choke on them."""
+    addr = addr.upper()
+    # 1. Strip Suites, Units, Apartments, and Building numbers
+    addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
+    addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
+    
+    # 2. Strip letters directly attached to street numbers (e.g., "5105B" -> "5105")
+    addr = re.sub(r'^(\d+)[A-Z]\b', r'\1', addr)
+    
+    # 3. Fix common database typos
+    addr = re.sub(r'\bINDUS\b', 'INDUSTRIAL', addr)
+    addr = re.sub(r'\bCOUR\b', 'COURT', addr)
+    
+    return " ".join(addr.split())
+
 st.set_page_config(page_title="GIS Phase I ESA Agent", layout="wide", page_icon="📍")
 
 # --- 1. SIDEBAR INPUTS ---
 with st.sidebar:
     st.header("⚙️ Project Settings")
-    st.success("✅ Free ArcGIS Engine")
+    st.success("✅ Free ArcGIS Engine (With Smart Scrubber)")
     
     st.divider()
     st.subheader("📍 Target Property")
-    st.warning("⚠️ Don't forget to update these for your specific site!")
     site_lat = st.number_input("Site Latitude", format="%.6f", value=28.349200)
     site_lon = st.number_input("Site Longitude", format="%.6f", value=-81.234000)
     search_radius = st.slider("Search Radius (Miles)", 0.1, 2.0, 0.25)
     
     st.divider()
     st.subheader("🗺️ Address Settings")
-    st.write("Force all addresses into a specific state to prevent them from jumping across the country.")
     force_state = st.text_input("Force State/City (e.g., 'TX' or 'Dallas, TX')", value="")
     
     st.divider()
@@ -67,10 +89,8 @@ if uploaded_files:
                 else: df = pd.read_excel(f)
                 df.columns = df.columns.str.strip().str.lower()
                 
-                # Look for address columns even if named slightly differently
                 addr_cols = [c for c in df.columns if 'address' in c or 'site_address' in c]
                 if addr_cols:
-                    # rename the first found address column to 'address' just to be safe
                     df.rename(columns={addr_cols[0]: 'address'}, inplace=True)
                     all_data.append(df)
             except Exception as e:
@@ -97,10 +117,12 @@ if uploaded_files:
                     ngcs.append(row)
                     continue 
 
-                # BUILD FULL ADDRESS
-                full_search_address = addr
+                # SCRUB THE ADDRESS FOR ARCGIS
+                scrubbed_addr = scrub_address_for_arcgis(addr)
                 
-                # Check for various state/city column names if user didn't force one
+                # BUILD FULL ADDRESS
+                full_search_address = scrubbed_addr
+                
                 if force_state:
                     full_search_address += f", {force_state}"
                 else:
@@ -204,7 +226,6 @@ if uploaded_files:
                 st.warning("The following sites were identified as Orphans (Vague or Unmappable).")
                 
                 df_ngc = pd.DataFrame(ngcs)
-                # Just show whatever columns we have gracefully
                 display_cols = ['address', 'reason']
                 for col in ['site id', 'site_id', 'city', 'state', 'st', 'zip', 'zipcode']:
                     if col in df_ngc.columns: display_cols.insert(-2, col)
