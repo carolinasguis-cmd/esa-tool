@@ -10,19 +10,27 @@ import re
 def is_vague_address(addr):
     addr = str(addr).upper().strip()
     
+    if not addr: return True
+    
     # 1. Catch distance descriptions like "0.54 miles from"
     if re.search(r'\d+(\.\d+)?\s*MILE', addr): 
         return True
     
-    # 2. Catch directional vagueness (Intersections allowed!)
+    # 2. Catch directional vagueness and PO Boxes
     vague_terms = [
         'NORTH OF', 'SOUTH OF', 'EAST OF', 'WEST OF',
-        'NEAR ', 'ADJACENT', 'BEHIND ', 'VICINITY', 'APPROX '
+        'NEAR ', 'ADJACENT', 'BEHIND ', 'VICINITY', 'APPROX ',
+        'PO BOX', 'P.O. BOX', 'P O BOX'
     ]
     if any(term in addr for term in vague_terms): 
         return True
     
-    if not addr: return True
+    # 3. MUST contain a number OR be an intersection
+    is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
+    has_number = any(char.isdigit() for char in addr)
+    
+    if not has_number and not is_intersection:
+        return True # e.g., "N BRIDGE ST" or "MAIN STREET" becomes NGC
         
     return False
 
@@ -113,12 +121,14 @@ if uploaded_files:
                 # Chop off inspector notes (e.g., /SOUTH OF GARAGE)
                 addr = addr.split('/')[0].split('(')[0].strip()
                 
+                # 1. ORPHAN FILTER
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
-                    row['reason'] = "Distance/Vague Description"
+                    row['reason'] = "Vague Description / Missing Number"
                     ngcs.append(row)
                     continue 
 
+                # 2. SCRUB ADDRESS
                 scrubbed_addr = scrub_address_for_arcgis(addr)
                 full_search_address = scrubbed_addr
                 
@@ -136,6 +146,7 @@ if uploaded_files:
                     if state: full_search_address += f", {state}"
                     if zip_code: full_search_address += f" {zip_code}"
 
+                # 3. GEOCODE
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
@@ -228,7 +239,7 @@ if st.session_state.run_complete:
         'ScatterplotLayer',
         data=pd.DataFrame([{'lat': site_lat, 'lon': site_lon}]),
         get_position='[lon, lat]',
-        get_color='[255, 0, 0, 30]', # 30 is the transparency (very light)
+        get_color='[255, 0, 0, 30]', 
         get_radius=radius_in_meters,
         pickable=False
     ))
@@ -259,41 +270,3 @@ if st.session_state.run_complete:
         layers.append(pdk.Layer(
             'ScatterplotLayer',
             data=pd.DataFrame(oob),
-            get_position='[mapped_lon, mapped_lat]',
-            get_color='[0, 100, 255, 150]', 
-            get_radius=60,
-            pickable=True
-        ))
-        
-    # 5. Add Yellow Highlight if searched
-    if highlight_layer:
-        layers.append(highlight_layer)
-
-    view_state = pdk.ViewState(latitude=map_center_lat, longitude=map_center_lon, zoom=map_zoom)
-    
-    st.pydeck_chart(pdk.Deck(
-        map_style=None, 
-        initial_view_state=view_state,
-        layers=layers,
-        tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
-    ))
-
-    # --- 4. NGC TABLE ---
-    if ngcs:
-        st.subheader("❌ Orphan (NGC) List")
-        df_ngc = pd.DataFrame(ngcs)
-        display_cols = ['address', 'reason']
-        for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
-            if col in df_ngc.columns: display_cols.insert(-2, col)
-            
-        st.dataframe(df_ngc[list(dict.fromkeys(display_cols))], use_container_width=True)
-
-    # --- 5. EXPORT ---
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
-        if oob: pd.DataFrame(oob).to_excel(writer, sheet_name="Out_of_Bounds", index=False)
-        if ngcs: pd.DataFrame(ngcs).to_excel(writer, sheet_name="Orphans_NGC", index=False)
-    
-    st.success("Analysis Complete!")
-    st.download_button("📥 Download Final Excel Report", output.getvalue(), "ESA_Final_Report.xlsx")
