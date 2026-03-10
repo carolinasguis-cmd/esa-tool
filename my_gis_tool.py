@@ -25,12 +25,15 @@ def is_vague_address(addr):
     if any(term in addr for term in vague_terms): 
         return True
     
-    # 3. MUST contain a number OR be an intersection
-    is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
-    has_number = any(char.isdigit() for char in addr)
+    # 3. HIGHWAY NUMBER FILTER: Hide highway designations to see if real building/section numbers exist
+    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR)\s*\d+[A-Z]?\b', '', addr)
     
-    if not has_number and not is_intersection:
-        return True # e.g., "N BRIDGE ST" or "MAIN STREET" becomes NGC
+    is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
+    has_real_number = any(char.isdigit() for char in addr_without_hwy)
+    
+    # If there are NO building numbers left (e.g. "KY 80") and it's not an intersection, it's an Orphan.
+    if not has_real_number and not is_intersection:
+        return True 
         
     return False
 
