@@ -270,3 +270,41 @@ if st.session_state.run_complete:
         layers.append(pdk.Layer(
             'ScatterplotLayer',
             data=pd.DataFrame(oob),
+            get_position='[mapped_lon, mapped_lat]',
+            get_color='[0, 100, 255, 150]', 
+            get_radius=60,
+            pickable=True
+        ))
+        
+    # 5. Add Yellow Highlight if searched
+    if highlight_layer:
+        layers.append(highlight_layer)
+
+    view_state = pdk.ViewState(latitude=map_center_lat, longitude=map_center_lon, zoom=map_zoom)
+    
+    st.pydeck_chart(pdk.Deck(
+        map_style=None, 
+        initial_view_state=view_state,
+        layers=layers,
+        tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
+    ))
+
+    # --- 4. NGC TABLE ---
+    if ngcs:
+        st.subheader("❌ Orphan (NGC) List")
+        df_ngc = pd.DataFrame(ngcs)
+        display_cols = ['address', 'reason']
+        for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
+            if col in df_ngc.columns: display_cols.insert(-2, col)
+            
+        st.dataframe(df_ngc[list(dict.fromkeys(display_cols))], use_container_width=True)
+
+    # --- 5. EXPORT ---
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
+        if oob: pd.DataFrame(oob).to_excel(writer, sheet_name="Out_of_Bounds", index=False)
+        if ngcs: pd.DataFrame(ngcs).to_excel(writer, sheet_name="Orphans_NGC", index=False)
+    
+    st.success("Analysis Complete!")
+    st.download_button("📥 Download Final Excel Report", output.getvalue(), "ESA_Final_Report.xlsx")
