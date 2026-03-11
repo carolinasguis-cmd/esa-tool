@@ -25,14 +25,14 @@ def is_vague_address(addr):
     if any(term in addr for term in vague_terms): 
         return True
     
-    # 3. HIGHWAY & ORDINAL FILTER: Hide highways and ordinal numbers (1ST, 2ND, 3RD)
-    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR)\s*\d+[A-Z]?\b', '', addr)
+    # 3. HIGHWAY & ORDINAL FILTER: Hide highways (now including INTERSTATE and RTE) and ordinal numbers
+    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE)\s*\d+[A-Z]?\b', '', addr)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
     has_real_number = any(char.isdigit() for char in addr_without_ordinals)
     
-    # If there are NO building numbers left (e.g. "KY 80" or "3RD AVE") and it's not an intersection, it's an Orphan.
+    # If there are NO building numbers left and it's not an intersection, it's an Orphan.
     if not has_real_number and not is_intersection:
         return True 
         
