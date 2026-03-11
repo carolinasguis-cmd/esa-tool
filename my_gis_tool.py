@@ -12,43 +12,35 @@ def is_vague_address(addr):
     
     if not addr: return True
     
-    # Define street checking early so multiple filters can use it
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # 1. Catch distance descriptions
     if re.search(r'\b\d+(\.\d+)?\s*(MILE|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
-    # 2. Universal Box Catcher
     if re.search(r'\bBOX\s*\d+\b', addr):
         return True
         
-    # 3. DOT Jargon & Coordinate Filter
     if re.search(r'\b(LAT|LONG|LATITUDE|LONGITUDE)\s*:?\s*\d+', addr):
         return True
     jargon_terms = ['CONTROL SECTION', 'LOG MILE', 'LOGMILE', ' N LONG', ' W LAT']
     if any(term in addr for term in jargon_terms):
         return True
     
-    # 4. Catch directional vagueness and PO Boxes
-    if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX)\b', addr):
+    # NEW: Catches highway directionals and exit terminology
+    if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP)\b', addr):
         return True
         
-    # 5. EXPANDED INDUSTRIAL FACILITY FILTER
     facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE)\b'
     if re.search(facility_regex, addr) and not has_street:
         return True
 
-    # 6. ALPHANUMERIC ID FILTER: Catch standalone database codes (now allows leading # and spaces)
     if re.match(r'^#?\s*[A-Z0-9]+-[A-Z0-9]+(\s+[A-Z0-9\-]+)*$', addr) and not has_street:
         return True
 
-    # 7. Strip Suites and Units BEFORE checking for real building numbers
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # 8. HIGHWAY & ORDINAL FILTER
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I\s*-?|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z]?\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
@@ -68,12 +60,9 @@ def clean_string(val):
     return " ".join(clean_val.split())
 
 def scrub_address_for_arcgis(addr):
-    """Aggressively cleans addresses so ArcGIS doesn't choke on them."""
     addr = addr.upper()
     
     addr = re.sub(r'\b(INTERSECTION OF|CORNER OF|INTERSECTION|INT OF)\b\s*', '', addr)
-    
-    # Strip highway directions and format intersection words
     addr = re.sub(r'\b(EB|WB|NB|SB)\b', '', addr)
     addr = addr.replace(' AT ', ' AND ')
     addr = addr.replace(' @ ', ' AND ')
