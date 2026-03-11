@@ -292,15 +292,34 @@ if st.session_state.run_complete:
         tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
     ))
 
-    # --- 4. NGC TABLE ---
+    # --- 4. RESULTS TABLES ---
+    
+    # Mapped Sites (Within Radius) Table
+    if matches:
+        st.subheader("✅ Mapped Sites (Within Radius)")
+        df_matches = pd.DataFrame(matches)
+        
+        # Pull in useful columns to display
+        display_cols_matches = ['address', 'miles_from_site']
+        for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st']:
+            if col in df_matches.columns: display_cols_matches.insert(0, col)
+            
+        # Remove duplicates while keeping order
+        display_cols_matches = list(dict.fromkeys(display_cols_matches))
+        
+        # Sort by distance so the closest ones are at the top
+        df_matches = df_matches.sort_values(by='miles_from_site')
+        st.dataframe(df_matches[display_cols_matches], use_container_width=True)
+
+    # Orphan (NGC) Table
     if ngcs:
         st.subheader("❌ Orphan (NGC) List")
         df_ngc = pd.DataFrame(ngcs)
-        display_cols = ['address', 'reason']
+        display_cols_ngc = ['address', 'reason']
         for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
-            if col in df_ngc.columns: display_cols.insert(-2, col)
+            if col in df_ngc.columns: display_cols_ngc.insert(-2, col)
             
-        st.dataframe(df_ngc[list(dict.fromkeys(display_cols))], use_container_width=True)
+        st.dataframe(df_ngc[list(dict.fromkeys(display_cols_ngc))], use_container_width=True)
 
     # --- 5. EXPORT ---
     output = io.BytesIO()
