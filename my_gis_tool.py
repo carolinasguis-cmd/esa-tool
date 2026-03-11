@@ -58,8 +58,14 @@ def scrub_address_for_arcgis(addr):
     """Aggressively cleans addresses so ArcGIS doesn't choke on them."""
     addr = addr.upper()
     
-    # --- NEW: Strip conversational fluff ---
+    # Strip conversational fluff
     addr = re.sub(r'\b(INTERSECTION OF|CORNER OF|INTERSECTION|INT OF)\b\s*', '', addr)
+    
+    # --- NEW: SYMBOL TRANSLATOR ---
+    # ArcGIS maps intersections flawlessly with 'AND', but chokes on '&' and apostrophes!
+    addr = addr.replace(' & ', ' AND ')
+    addr = addr.replace(' @ ', ' AND ')
+    addr = addr.replace("'", "")
     
     addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
