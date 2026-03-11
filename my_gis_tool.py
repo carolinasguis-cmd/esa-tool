@@ -12,20 +12,24 @@ def is_vague_address(addr):
     
     if not addr: return True
     
-    # 1. Catch distance descriptions like "0.54 miles from"
-    if re.search(r'\d+(\.\d+)?\s*MILE', addr): 
+    # 1. Catch distance descriptions
+    if re.search(r'\b\d+(\.\d+)?\s*(MILE|MI\b|FT\b|FEET\b)', addr): 
+        return True
+        
+    # --- NEW: Universal Box Catcher ---
+    # Catches "PO BOX 12", "RT 2 BOX 348", "RR 1 BOX 50", but ignores "123 BOX ELDER RD"
+    if re.search(r'\bBOX\s*\d+\b', addr):
         return True
     
-    # 2. Catch directional vagueness and PO Boxes
+    # 2. Catch directional vagueness and old PO Box formats
     vague_terms = [
-        'NORTH OF', 'SOUTH OF', 'EAST OF', 'WEST OF',
         'NEAR ', 'ADJACENT', 'BEHIND ', 'VICINITY', 'APPROX ',
-        'PO BOX', 'P.O. BOX', 'P O BOX'
+        'PO BOX', 'P.O. BOX', 'P O BOX', 'P.O.BOX'
     ]
     if any(term in addr for term in vague_terms): 
         return True
         
-    # --- 3. CAMPUS FILTER: Catch large facilities without proper street names ---
+    # 3. CAMPUS FILTER: Catch large facilities without proper street names
     campus_terms = ['AIRPORT', 'AFB', 'BASE', 'CAMPUS']
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     
@@ -35,8 +39,8 @@ def is_vague_address(addr):
     if has_campus and not has_street:
         return True
 
-    # 4. HIGHWAY & ORDINAL FILTER: Hide highways and ordinal numbers
-    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE)\s*\d+[A-Z]?\b', '', addr)
+    # 4. HIGHWAY & ORDINAL FILTER: Hide highways (added RT) and ordinal numbers
+    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z]?\b', '', addr)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
@@ -60,12 +64,6 @@ def scrub_address_for_arcgis(addr):
     
     # Strip conversational fluff
     addr = re.sub(r'\b(INTERSECTION OF|CORNER OF|INTERSECTION|INT OF)\b\s*', '', addr)
-    
-    # --- NEW: SYMBOL TRANSLATOR ---
-    # ArcGIS maps intersections flawlessly with 'AND', but chokes on '&' and apostrophes!
-    addr = addr.replace(' & ', ' AND ')
-    addr = addr.replace(' @ ', ' AND ')
-    addr = addr.replace("'", "")
     
     addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
@@ -136,8 +134,8 @@ if uploaded_files:
                 # First, chop off slash and parenthesis notes
                 addr = addr.split('/')[0].split('(')[0].strip()
                 
-                # Next, chop off text-based inspector notes
-                chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ']
+                # The Word Chopper
+                chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ']
                 for cw in chop_words:
                     if cw in addr:
                         addr = addr.split(cw)[0].strip()
