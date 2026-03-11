@@ -12,12 +12,20 @@ def is_vague_address(addr):
     
     if not addr: return True
     
-    # 1. Catch distance descriptions
-    if re.search(r'\b\d+(\.\d+)?\s*(MILE|MI\b|FT\b|FEET\b)', addr): 
+    # 1. Catch distance descriptions (Now catches "5 MILES" AND "MILE 5")
+    if re.search(r'\b\d+(\.\d+)?\s*(MILE|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
     # 2. Universal Box Catcher
     if re.search(r'\bBOX\s*\d+\b', addr):
+        return True
+        
+    # --- NEW: DOT Jargon & Coordinate Filter ---
+    jargon_terms = [
+        'CONTROL SECTION', 'LOG MILE', 'LOGMILE', 
+        'LAT:', 'LONG:', 'LATITUDE', 'LONGITUDE', ' N LONG', ' W LAT', 'LAT ', 'LONG '
+    ]
+    if any(term in addr for term in jargon_terms):
         return True
     
     # 3. Catch directional vagueness and old PO Box formats
