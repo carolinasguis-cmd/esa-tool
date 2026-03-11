@@ -24,8 +24,19 @@ def is_vague_address(addr):
     ]
     if any(term in addr for term in vague_terms): 
         return True
+        
+    # --- 3. CAMPUS FILTER: Catch large facilities without proper street names ---
+    campus_terms = ['AIRPORT', 'AFB', 'BASE', 'CAMPUS']
+    street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     
-    # 3. HIGHWAY & ORDINAL FILTER: Hide highways (now including INTERSTATE and RTE) and ordinal numbers
+    has_campus = any(term in addr for term in campus_terms)
+    has_street = any(suffix in addr for suffix in street_suffixes)
+    
+    # If it's a campus/airport but doesn't have a specific street name, it's an Orphan
+    if has_campus and not has_street:
+        return True
+
+    # 4. HIGHWAY & ORDINAL FILTER: Hide highways and ordinal numbers
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE)\s*\d+[A-Z]?\b', '', addr)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
