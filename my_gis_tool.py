@@ -57,6 +57,10 @@ def clean_string(val):
 def scrub_address_for_arcgis(addr):
     """Aggressively cleans addresses so ArcGIS doesn't choke on them."""
     addr = addr.upper()
+    
+    # --- NEW: Strip conversational fluff ---
+    addr = re.sub(r'\b(INTERSECTION OF|CORNER OF|INTERSECTION|INT OF)\b\s*', '', addr)
+    
     addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
     addr = re.sub(r'^(\d+)[A-Z]\b', r'\1', addr)
@@ -123,7 +127,6 @@ if uploaded_files:
                 raw_addr = row.get('address', '')
                 addr = clean_string(raw_addr).upper()
                 
-                # --- NEW: THE WORD CHOPPER ---
                 # First, chop off slash and parenthesis notes
                 addr = addr.split('/')[0].split('(')[0].strip()
                 
