@@ -28,13 +28,12 @@ def is_vague_address(addr):
     if any(term in addr for term in vague_terms): 
         return True
         
-    # --- 4. UPDATED CAMPUS FILTER: Now includes PORT, PIER, and TERMINAL ---
+    # 4. UPDATED CAMPUS FILTER: Now includes PORT, PIER, and TERMINAL
     has_campus = re.search(r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL)\b', addr)
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # If it is a massive facility but lacks a street name, throw it out!
     if has_campus and not has_street:
         return True
 
@@ -94,6 +93,4 @@ with st.sidebar:
 st.title("📍 Phase I ESA: Mapping Agent")
 st.markdown("Automated sorting of **Mappable Sites** vs. **Orphans (NGCs)**.")
 
-uploaded_files = st.file_uploader("📂 Drop ESA Files Here (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True)
-
-if
+uploaded_
