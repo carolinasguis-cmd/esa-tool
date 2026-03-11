@@ -40,8 +40,8 @@ def is_vague_address(addr):
     if re.search(facility_regex, addr) and not has_street:
         return True
 
-    # 6. ALPHANUMERIC ID FILTER: Catch standalone database codes (e.g., "V-UA 59", "A-4")
-    if re.match(r'^[A-Z0-9]+-[A-Z0-9]+(\s+[A-Z0-9\-]+)*$', addr) and not has_street:
+    # 6. ALPHANUMERIC ID FILTER: Catch standalone database codes (now allows leading # and spaces)
+    if re.match(r'^#?\s*[A-Z0-9]+-[A-Z0-9]+(\s+[A-Z0-9\-]+)*$', addr) and not has_street:
         return True
 
     # 7. Strip Suites and Units BEFORE checking for real building numbers
