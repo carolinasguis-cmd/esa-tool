@@ -12,7 +12,7 @@ def is_vague_address(addr):
     
     if not addr: return True
     
-    # 1. Catch distance descriptions (Now catches "5 MILES" AND "MILE 5")
+    # 1. Catch distance descriptions
     if re.search(r'\b\d+(\.\d+)?\s*(MILE|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
@@ -20,7 +20,7 @@ def is_vague_address(addr):
     if re.search(r'\bBOX\s*\d+\b', addr):
         return True
         
-    # --- NEW: DOT Jargon & Coordinate Filter ---
+    # 3. DOT Jargon & Coordinate Filter
     jargon_terms = [
         'CONTROL SECTION', 'LOG MILE', 'LOGMILE', 
         'LAT:', 'LONG:', 'LATITUDE', 'LONGITUDE', ' N LONG', ' W LAT', 'LAT ', 'LONG '
@@ -28,7 +28,7 @@ def is_vague_address(addr):
     if any(term in addr for term in jargon_terms):
         return True
     
-    # 3. Catch directional vagueness and old PO Box formats
+    # 4. Catch directional vagueness and old PO Box formats
     vague_terms = [
         'NEAR ', 'ADJACENT', 'BEHIND ', 'VICINITY', 'APPROX ',
         'PO BOX', 'P.O. BOX', 'P O BOX', 'P.O.BOX'
@@ -36,18 +36,22 @@ def is_vague_address(addr):
     if any(term in addr for term in vague_terms): 
         return True
         
-    # 4. UPDATED CAMPUS FILTER: Now includes PORT, PIER, and TERMINAL
-    has_campus = re.search(r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL)\b', addr)
+    # 5. EXPANDED INDUSTRIAL FACILITY FILTER
+    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT)\b'
+    has_facility = re.search(facility_regex, addr)
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # If it is a massive facility but lacks a street name, throw it out!
-    if has_campus and not has_street:
+    if has_facility and not has_street:
         return True
 
-    # 5. HIGHWAY & ORDINAL FILTER: Hide highways and ordinal numbers
-    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z]?\b', '', addr)
+    # 6. Strip Suites and Units BEFORE checking for real building numbers
+    addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
+    addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
+
+    # 7. HIGHWAY & ORDINAL FILTER: Hide highways and ordinal numbers
+    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z]?\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
@@ -69,9 +73,7 @@ def scrub_address_for_arcgis(addr):
     """Aggressively cleans addresses so ArcGIS doesn't choke on them."""
     addr = addr.upper()
     
-    # Strip conversational fluff
     addr = re.sub(r'\b(INTERSECTION OF|CORNER OF|INTERSECTION|INT OF)\b\s*', '', addr)
-    
     addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
     addr = re.sub(r'^(\d+)[A-Z]\b', r'\1', addr)
@@ -138,23 +140,19 @@ if uploaded_files:
                 raw_addr = row.get('address', '')
                 addr = clean_string(raw_addr).upper()
                 
-                # First, chop off slash and parenthesis notes
                 addr = addr.split('/')[0].split('(')[0].strip()
                 
-                # The Word Chopper
                 chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ']
                 for cw in chop_words:
                     if cw in addr:
                         addr = addr.split(cw)[0].strip()
                 
-                # 1. ORPHAN FILTER
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Missing Number"
                     ngcs.append(row)
                     continue 
 
-                # 2. SCRUB ADDRESS
                 scrubbed_addr = scrub_address_for_arcgis(addr)
                 full_search_address = scrubbed_addr
                 
@@ -171,7 +169,6 @@ if uploaded_files:
                     if state: full_search_address += f", {state}"
                     if zip_code: full_search_address += f" {zip_code}"
 
-                # 3. GEOCODE
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
@@ -209,7 +206,6 @@ if uploaded_files:
             st.session_state.ngcs = ngcs
             st.session_state.run_complete = True
 
-# --- 3. RESULTS DISPLAY & INTERACTIVE MAP ---
 if st.session_state.run_complete:
     matches = st.session_state.matches
     oob = st.session_state.oob
@@ -304,8 +300,6 @@ if st.session_state.run_complete:
         layers=layers,
         tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
     ))
-
-    # --- 4. RESULTS TABLES ---
     
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
@@ -328,7 +322,6 @@ if st.session_state.run_complete:
             
         st.dataframe(df_ngc[list(dict.fromkeys(display_cols_ngc))], use_container_width=True)
 
-    # --- 5. EXPORT ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
