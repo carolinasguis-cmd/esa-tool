@@ -25,13 +25,14 @@ def is_vague_address(addr):
     if any(term in addr for term in vague_terms): 
         return True
     
-    # 3. HIGHWAY NUMBER FILTER: Hide highway designations to see if real building/section numbers exist
+    # 3. HIGHWAY & ORDINAL FILTER: Hide highways and ordinal numbers (1ST, 2ND, 3RD)
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I-|I\s*-|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR)\s*\d+[A-Z]?\b', '', addr)
+    addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
-    has_real_number = any(char.isdigit() for char in addr_without_hwy)
+    has_real_number = any(char.isdigit() for char in addr_without_ordinals)
     
-    # If there are NO building numbers left (e.g. "KY 80") and it's not an intersection, it's an Orphan.
+    # If there are NO building numbers left (e.g. "KY 80" or "3RD AVE") and it's not an intersection, it's an Orphan.
     if not has_real_number and not is_intersection:
         return True 
         
@@ -299,15 +300,11 @@ if st.session_state.run_complete:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
         
-        # Pull in useful columns to display
         display_cols_matches = ['address', 'miles_from_site']
         for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st']:
             if col in df_matches.columns: display_cols_matches.insert(0, col)
             
-        # Remove duplicates while keeping order
         display_cols_matches = list(dict.fromkeys(display_cols_matches))
-        
-        # Sort by distance so the closest ones are at the top
         df_matches = df_matches.sort_values(by='miles_from_site')
         st.dataframe(df_matches[display_cols_matches], use_container_width=True)
 
