@@ -32,7 +32,6 @@ def is_vague_address(addr):
     has_campus = any(term in addr for term in campus_terms)
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # If it's a campus/airport but doesn't have a specific street name, it's an Orphan
     if has_campus and not has_street:
         return True
 
@@ -43,7 +42,6 @@ def is_vague_address(addr):
     is_intersection = any(x in addr for x in [' & ', ' AND ', '@'])
     has_real_number = any(char.isdigit() for char in addr_without_ordinals)
     
-    # If there are NO building numbers left and it's not an intersection, it's an Orphan.
     if not has_real_number and not is_intersection:
         return True 
         
@@ -59,35 +57,28 @@ def clean_string(val):
 def scrub_address_for_arcgis(addr):
     """Aggressively cleans addresses so ArcGIS doesn't choke on them."""
     addr = addr.upper()
-    # Strip Suites, Units, Apartments, and Building numbers
     addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
-    # Strip letters directly attached to street numbers (e.g., "5105B" -> "5105")
     addr = re.sub(r'^(\d+)[A-Z]\b', r'\1', addr)
-    # Fix common database typos
     addr = re.sub(r'\bINDUS\b', 'INDUSTRIAL', addr)
     addr = re.sub(r'\bCOUR\b', 'COURT', addr)
     return " ".join(addr.split())
 
 st.set_page_config(page_title="GIS Phase I ESA Agent", layout="wide", page_icon="📍")
 
-# --- INITIALIZE MEMORY ---
 if "run_complete" not in st.session_state:
     st.session_state.run_complete = False
     st.session_state.matches = []
     st.session_state.oob = []
     st.session_state.ngcs = []
 
-# --- 1. SIDEBAR INPUTS ---
 with st.sidebar:
     st.header("⚙️ Project Settings")
-    
     st.divider()
     st.subheader("📍 Target Property")
     site_lat = st.number_input("Site Latitude", format="%.6f", value=33.927600)
     site_lon = st.number_input("Site Longitude", format="%.6f", value=-84.247200)
     search_radius = st.slider("Search Radius (Miles)", 0.1, 2.0, 0.5)
-    
     st.divider()
     st.subheader("🗺️ Address Settings")
     force_state = st.text_input("Force State/City (e.g., 'TX' or 'Dallas, TX')", value="")
@@ -98,7 +89,6 @@ st.markdown("Automated sorting of **Mappable Sites** vs. **Orphans (NGCs)**.")
 
 uploaded_files = st.file_uploader("📂 Drop ESA Files Here (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True)
 
-# --- 2. MAIN ANALYSIS ENGINE ---
 if uploaded_files:
     if st.button("🚀 Run Analysis"):
         geolocator = ArcGIS()
@@ -131,10 +121,17 @@ if uploaded_files:
                 status_text.text(f"Processing Record {i+1} of {total_rows}...")
                 
                 raw_addr = row.get('address', '')
-                addr = clean_string(raw_addr)
+                addr = clean_string(raw_addr).upper()
                 
-                # Chop off inspector notes (e.g., /SOUTH OF GARAGE)
+                # --- NEW: THE WORD CHOPPER ---
+                # First, chop off slash and parenthesis notes
                 addr = addr.split('/')[0].split('(')[0].strip()
+                
+                # Next, chop off text-based inspector notes
+                chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ']
+                for cw in chop_words:
+                    if cw in addr:
+                        addr = addr.split(cw)[0].strip()
                 
                 # 1. ORPHAN FILTER
                 if is_vague_address(addr):
@@ -150,7 +147,6 @@ if uploaded_files:
                 if force_state:
                     full_search_address += f", {force_state}"
                 else:
-                    # Dynamically find City, County, State, Zip columns
                     city = next((clean_string(row[c]) for c in row.index if c in ['city', 'site city', 'site_city']), "")
                     county = next((clean_string(row[c]) for c in row.index if c in ['county', 'site county', 'site_county']), "")
                     state = next((clean_string(row[c]) for c in row.index if c in ['state', 'st', 'site state']), "")
@@ -194,7 +190,6 @@ if uploaded_files:
             prog_bar.empty()
             status_text.empty()
             
-            # Save to memory so user can search later without reloading
             st.session_state.matches = matches
             st.session_state.oob = oob
             st.session_state.ngcs = ngcs
@@ -214,7 +209,6 @@ if st.session_state.run_complete:
 
     st.subheader("🗺️ Site Map")
     
-    # --- SITE ID SEARCH FEATURE ---
     search_site_id = st.text_input("🔍 Search Map by Site ID (Optional)")
     
     map_center_lat = site_lat
@@ -230,8 +224,7 @@ if st.session_state.run_complete:
             if search_site_id.strip() in [sid1, sid2] and search_site_id.strip() != "":
                 map_center_lat = r['mapped_lat']
                 map_center_lon = r['mapped_lon']
-                map_zoom = 17 # Zoom in tight
-                # Create a big yellow highlight dot
+                map_zoom = 17 
                 highlight_layer = pdk.Layer(
                     'ScatterplotLayer',
                     data=pd.DataFrame([{'lat': map_center_lat, 'lon': map_center_lon, 'address': r.get('address', '')}]),
@@ -245,11 +238,9 @@ if st.session_state.run_complete:
         if not found:
             st.warning(f"Could not find a mapped site with ID: '{search_site_id}'. It might be an Orphan.")
 
-    # --- MAP LAYERS ---
     layers = []
     
-    # 1. VISUAL BUFFER RING (Translucent Red)
-    radius_in_meters = search_radius * 1609.34 # Convert miles to meters
+    radius_in_meters = search_radius * 1609.34 
     layers.append(pdk.Layer(
         'ScatterplotLayer',
         data=pd.DataFrame([{'lat': site_lat, 'lon': site_lon}]),
@@ -259,7 +250,6 @@ if st.session_state.run_complete:
         pickable=False
     ))
     
-    # 2. Target Property Dot
     layers.append(pdk.Layer(
         'ScatterplotLayer',
         data=pd.DataFrame([{'lat': site_lat, 'lon': site_lon}]),
@@ -269,7 +259,6 @@ if st.session_state.run_complete:
         pickable=False
     ))
     
-    # 3. Matches (Green)
     if matches:
         layers.append(pdk.Layer(
             'ScatterplotLayer',
@@ -280,7 +269,6 @@ if st.session_state.run_complete:
             pickable=True
         ))
     
-    # 4. Out of Bounds (Blue)
     if show_oob and oob:
         layers.append(pdk.Layer(
             'ScatterplotLayer',
@@ -291,7 +279,6 @@ if st.session_state.run_complete:
             pickable=True
         ))
         
-    # 5. Add Yellow Highlight if searched
     if highlight_layer:
         layers.append(highlight_layer)
 
@@ -306,7 +293,6 @@ if st.session_state.run_complete:
 
     # --- 4. RESULTS TABLES ---
     
-    # Mapped Sites (Within Radius) Table
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
@@ -319,7 +305,6 @@ if st.session_state.run_complete:
         df_matches = df_matches.sort_values(by='miles_from_site')
         st.dataframe(df_matches[display_cols_matches], use_container_width=True)
 
-    # Orphan (NGC) Table
     if ngcs:
         st.subheader("❌ Orphan (NGC) List")
         df_ngc = pd.DataFrame(ngcs)
