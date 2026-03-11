@@ -12,6 +12,10 @@ def is_vague_address(addr):
     
     if not addr: return True
     
+    # Define street checking early so multiple filters can use it
+    street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
+    has_street = any(suffix in addr for suffix in street_suffixes)
+    
     # 1. Catch distance descriptions
     if re.search(r'\b\d+(\.\d+)?\s*(MILE|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
@@ -33,19 +37,18 @@ def is_vague_address(addr):
         
     # 5. EXPANDED INDUSTRIAL FACILITY FILTER
     facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE)\b'
-    has_facility = re.search(facility_regex, addr)
-    street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
-    
-    has_street = any(suffix in addr for suffix in street_suffixes)
-    
-    if has_facility and not has_street:
+    if re.search(facility_regex, addr) and not has_street:
         return True
 
-    # 6. Strip Suites and Units BEFORE checking for real building numbers
+    # 6. ALPHANUMERIC ID FILTER: Catch standalone database codes (e.g., "V-UA 59", "A-4")
+    if re.match(r'^[A-Z0-9]+-[A-Z0-9]+(\s+[A-Z0-9\-]+)*$', addr) and not has_street:
+        return True
+
+    # 7. Strip Suites and Units BEFORE checking for real building numbers
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # 7. HIGHWAY & ORDINAL FILTER
+    # 8. HIGHWAY & ORDINAL FILTER
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I\s*-?|SR|ROUTE|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z]?\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
