@@ -15,11 +15,11 @@ def is_vague_address(addr):
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # 1. Catch distance descriptions (Upgraded to catch decimals and zero-boundary numbers)
-    if re.search(r'(?:^|\s)\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
+    # 1. Distance markers (Now catches leading decimals and full text)
+    if re.search(r'\b\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
-    # 2. Strict Directional Routing Filter (Instantly catches N OF, WEST OF, etc.)
+    # 2. Strict Directional Routing (Catches W OF, NW OF, etc. anywhere in the string)
     if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST)\s+OF\b', addr):
         return True
         
@@ -67,8 +67,18 @@ def clean_string(val):
     return " ".join(clean_val.split())
 
 def scrub_address_for_arcgis(addr):
+    """Cleans and chops the address ONLY AFTER it has passed the Orphan filters."""
     addr = addr.upper()
     
+    # Strip slashes and parenthesis notes
+    addr = addr.split('/')[0].split('(')[0].strip()
+    
+    # The Word Chopper (Moved here from the main loop)
+    chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ']
+    for cw in chop_words:
+        if cw in addr:
+            addr = addr.split(cw)[0].strip()
+            
     addr = re.sub(r'\b(INTERSECTION OF|CORNER OF|INTERSECTION|INT OF)\b\s*', '', addr)
     addr = re.sub(r'\b(EB|WB|NB|SB)\b', '', addr)
     addr = addr.replace(' AT ', ' AND ')
@@ -174,13 +184,7 @@ if uploaded_files:
                 raw_addr = row.get('address', '')
                 addr = clean_string(raw_addr).upper()
                 
-                addr = addr.split('/')[0].split('(')[0].strip()
-                
-                chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ']
-                for cw in chop_words:
-                    if cw in addr:
-                        addr = addr.split(cw)[0].strip()
-                
+                # --- ORPHAN FILTER CHECK (Now sees the raw, unmodified string) ---
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Missing Number"
@@ -190,6 +194,7 @@ if uploaded_files:
                         ngcs_outside.append(row)
                     continue 
 
+                # --- ARCGIS SEARCH STRING ---
                 scrubbed_addr = scrub_address_for_arcgis(addr)
                 full_search_address = scrubbed_addr
                 
@@ -211,6 +216,7 @@ if uploaded_files:
                     if state: full_search_address += f", {state}"
                     if zip_code: full_search_address += f" {zip_code}"
 
+                # --- GEOCODE ---
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
@@ -352,6 +358,7 @@ if st.session_state.run_complete:
         tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
     ))
     
+    # --- 4. RESULTS TABLES ---
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
@@ -379,6 +386,7 @@ if st.session_state.run_complete:
             if col in df_ngc_outside.columns: display_cols_outside.insert(-2, col)
         st.dataframe(df_ngc_outside[list(dict.fromkeys(display_cols_outside))], use_container_width=True)
 
+    # --- 5. EXPORT ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
