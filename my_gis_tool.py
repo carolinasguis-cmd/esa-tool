@@ -75,12 +75,13 @@ def scrub_address_for_arcgis(addr):
     addr = re.sub(r'\bCOUR\b', 'COURT', addr)
     return " ".join(addr.split())
 
-def is_local_ngc(row, t_city, t_county, t_zip):
-    if not t_city and not t_county and not t_zip:
+def is_local_ngc(row, t_city, t_state, t_zips_list):
+    """Checks if the Orphan matches the Target City, State, or ANY of the Target Zips."""
+    if not t_city and not t_state and not t_zips_list:
         return False
         
-    r_city = clean_string(row.get('city', '')).upper()
-    r_county = clean_string(row.get('county', '')).upper()
+    r_city = next((clean_string(row[c]).upper() for c in row.index if c in ['city', 'site city', 'site_city']), "")
+    r_state = next((clean_string(row[c]).upper() for c in row.index if c in ['state', 'st', 'site state', 'site_state']), "")
     
     r_zip = ""
     for col in row.index:
@@ -88,9 +89,13 @@ def is_local_ngc(row, t_city, t_county, t_zip):
             r_zip = clean_string(row[col])
             break
 
-    if t_city and t_city in r_city: return True
-    if t_county and t_county in r_county: return True
-    if t_zip and t_zip in r_zip: return True
+    if t_city and r_city and (t_city in r_city or r_city in t_city): return True
+    if t_state and r_state and (t_state == r_state or t_state in r_state or r_state in t_state): return True
+    
+    if r_zip and t_zips_list:
+        for z in t_zips_list:
+            if z in r_zip or r_zip in z:
+                return True
     
     return False
 
@@ -113,10 +118,13 @@ with st.sidebar:
     
     st.divider()
     st.subheader("🏙️ Target Property Details")
-    st.caption("Used to sort Orphans into Local vs. Outside.")
+    st.caption("Please fill these out BEFORE clicking Run Analysis.")
     target_city = st.text_input("Target City").strip().upper()
-    target_county = st.text_input("Target County").strip().upper()
-    target_zip = st.text_input("Target Zip Code").strip()
+    target_state = st.text_input("Target State (e.g., TX)").strip().upper()
+    target_zips_input = st.text_input("Target Zip Code(s) (comma-separated)").strip()
+    
+    # Process multiple zips
+    target_zips = [z.strip() for z in target_zips_input.split(',') if z.strip()]
     
     st.divider()
     st.subheader("🗺️ Mapping Overrides")
@@ -169,15 +177,17 @@ if uploaded_files:
                     if cw in addr:
                         addr = addr.split(cw)[0].strip()
                 
+                # --- ORPHAN FILTER CHECK ---
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Missing Number"
-                    if is_local_ngc(row, target_city, target_county, target_zip):
+                    if is_local_ngc(row, target_city, target_state, target_zips):
                         ngcs_local.append(row)
                     else:
                         ngcs_outside.append(row)
                     continue 
 
+                # --- ARCGIS SEARCH STRING ---
                 scrubbed_addr = scrub_address_for_arcgis(addr)
                 full_search_address = scrubbed_addr
                 
@@ -199,6 +209,7 @@ if uploaded_files:
                     if state: full_search_address += f", {state}"
                     if zip_code: full_search_address += f" {zip_code}"
 
+                # --- GEOCODE ---
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
@@ -220,14 +231,14 @@ if uploaded_files:
                     else:
                         row['status'] = "NGC (Not Found)"
                         row['reason'] = "Address not found by ArcGIS"
-                        if is_local_ngc(row, target_city, target_county, target_zip):
+                        if is_local_ngc(row, target_city, target_state, target_zips):
                             ngcs_local.append(row)
                         else:
                             ngcs_outside.append(row)
                 except Exception as e:
                     row['status'] = "Error"
                     row['reason'] = str(e)
-                    if is_local_ngc(row, target_city, target_county, target_zip):
+                    if is_local_ngc(row, target_city, target_state, target_zips):
                         ngcs_local.append(row)
                     else:
                         ngcs_outside.append(row)
@@ -345,7 +356,6 @@ if st.session_state.run_complete:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
         
-        # ADDED mapped_lat and mapped_lon to the UI display
         display_cols_matches = ['address', 'miles_from_site', 'mapped_lat', 'mapped_lon']
         for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st']:
             if col in df_matches.columns: display_cols_matches.insert(0, col)
@@ -354,7 +364,7 @@ if st.session_state.run_complete:
         st.dataframe(df_matches.sort_values(by='miles_from_site')[display_cols_matches], use_container_width=True)
 
     if ngcs_local:
-        st.subheader("🟡 Local Orphans (City, County, or Zip Matches Target)")
+        st.subheader("🟡 Local Orphans (City, State, or Zip Matches Target)")
         df_ngc_local = pd.DataFrame(ngcs_local)
         display_cols_local = ['address', 'reason']
         for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
