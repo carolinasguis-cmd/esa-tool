@@ -76,9 +76,8 @@ def scrub_address_for_arcgis(addr):
     return " ".join(addr.split())
 
 def is_local_ngc(row, t_city, t_county, t_zip):
-    """Checks if the Orphan row shares a city, county, or zip with the Target Property."""
     if not t_city and not t_county and not t_zip:
-        return False # If user inputs nothing, default to outside
+        return False
         
     r_city = clean_string(row.get('city', '')).upper()
     r_county = clean_string(row.get('county', '')).upper()
@@ -170,7 +169,6 @@ if uploaded_files:
                     if cw in addr:
                         addr = addr.split(cw)[0].strip()
                 
-                # --- ORPHAN FILTER CHECK ---
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Missing Number"
@@ -180,7 +178,6 @@ if uploaded_files:
                         ngcs_outside.append(row)
                     continue 
 
-                # --- ARCGIS SEARCH STRING ---
                 scrubbed_addr = scrub_address_for_arcgis(addr)
                 full_search_address = scrubbed_addr
                 
@@ -202,7 +199,6 @@ if uploaded_files:
                     if state: full_search_address += f", {state}"
                     if zip_code: full_search_address += f" {zip_code}"
 
-                # --- GEOCODE ---
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
@@ -348,9 +344,12 @@ if st.session_state.run_complete:
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
-        display_cols_matches = ['address', 'miles_from_site']
+        
+        # ADDED mapped_lat and mapped_lon to the UI display
+        display_cols_matches = ['address', 'miles_from_site', 'mapped_lat', 'mapped_lon']
         for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st']:
             if col in df_matches.columns: display_cols_matches.insert(0, col)
+            
         display_cols_matches = list(dict.fromkeys(display_cols_matches))
         st.dataframe(df_matches.sort_values(by='miles_from_site')[display_cols_matches], use_container_width=True)
 
