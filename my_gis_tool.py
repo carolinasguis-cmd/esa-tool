@@ -55,8 +55,9 @@ def is_vague_address(addr):
     if re.search(facility_regex, addr) and not has_street:
         return True
 
-    # --- NEW: LEGAL DESCRIPTION & SURVEY FILTER ---
-    legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL)\b'
+    # --- UPGRADED: LEGAL DESCRIPTION & SURVEY FILTER ---
+    # Now catches LOT and BLOCK descriptions
+    legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL|LOT|BLOCK)\b'
     if re.search(legal_regex, addr) and not has_street:
         return True
 
