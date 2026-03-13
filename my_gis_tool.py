@@ -15,11 +15,9 @@ def is_vague_address(addr):
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # 1. Distance markers (Now catches leading decimals and full text)
     if re.search(r'\b\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
-    # 2. Strict Directional Routing (Catches W OF, NW OF, etc. anywhere in the string)
     if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST)\s+OF\b', addr):
         return True
         
@@ -62,18 +60,15 @@ def is_vague_address(addr):
 def clean_string(val):
     if pd.isna(val): return ""
     clean_val = str(val).strip()
-    if clean_val.lower() == 'nan': return ""
+    if clean_val.lower() == 'nan' or clean_val.lower() == 'none': return ""
     if clean_val.endswith('.0'): clean_val = clean_val[:-2]
     return " ".join(clean_val.split())
 
 def scrub_address_for_arcgis(addr):
-    """Cleans and chops the address ONLY AFTER it has passed the Orphan filters."""
     addr = addr.upper()
     
-    # Strip slashes and parenthesis notes
     addr = addr.split('/')[0].split('(')[0].strip()
     
-    # The Word Chopper (Moved here from the main loop)
     chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ']
     for cw in chop_words:
         if cw in addr:
@@ -91,11 +86,12 @@ def scrub_address_for_arcgis(addr):
     addr = re.sub(r'\bCOUR\b', 'COURT', addr)
     return " ".join(addr.split())
 
-def is_local_ngc(row, t_city, t_state, t_zips_list):
-    if not t_city and not t_state and not t_zips_list:
+def is_local_ngc(row, t_city, t_county, t_state, t_zips_list):
+    if not t_city and not t_county and not t_state and not t_zips_list:
         return False
         
     r_city = next((clean_string(row[c]).upper() for c in row.index if c in ['city', 'site city', 'site_city']), "")
+    r_county = next((clean_string(row[c]).upper() for c in row.index if c in ['county', 'site county', 'site_county']), "")
     r_state = next((clean_string(row[c]).upper() for c in row.index if c in ['state', 'st', 'site state', 'site_state']), "")
     
     r_zip = ""
@@ -104,7 +100,11 @@ def is_local_ngc(row, t_city, t_state, t_zips_list):
             r_zip = clean_string(row[col])
             break
 
+    t_county_clean = t_county.replace(" COUNTY", "").strip()
+    r_county_clean = r_county.replace(" COUNTY", "").strip()
+
     if t_city and r_city and (t_city in r_city or r_city in t_city): return True
+    if t_county_clean and r_county_clean and (t_county_clean in r_county_clean or r_county_clean in t_county_clean): return True
     if t_state and r_state and (t_state == r_state or t_state in r_state or r_state in t_state): return True
     
     if r_zip and t_zips_list:
@@ -122,6 +122,7 @@ if "run_complete" not in st.session_state:
     st.session_state.oob = []
     st.session_state.ngcs_local = []
     st.session_state.ngcs_outside = []
+    st.session_state.blank_addrs = []
 
 with st.sidebar:
     st.header("⚙️ Project Settings")
@@ -133,8 +134,9 @@ with st.sidebar:
     
     st.divider()
     st.subheader("🏙️ Target Property Details")
-    st.caption("Please fill these out BEFORE clicking Run Analysis.")
+    st.caption("Used to sort Orphans into Local vs. Outside.")
     target_city = st.text_input("Target City").strip().upper()
+    target_county = st.text_input("Target County (e.g., Guadalupe)").strip().upper()
     target_state = st.text_input("Target State (e.g., TX)").strip().upper()
     target_zips_input = st.text_input("Target Zip Code(s) (comma-separated)").strip()
     
@@ -146,7 +148,7 @@ with st.sidebar:
     show_oob = st.checkbox("Show 'Out of Bounds' (Blue Dots)", value=True)
 
 st.title("📍 Phase I ESA: Mapping Agent")
-st.markdown("Automated sorting of **Mappable Sites** vs. **Local Orphans** vs. **Outside Orphans**.")
+st.markdown("Automated sorting of **Mappable Sites**, **Local Orphans**, **Outside Orphans**, and **Blank Data**.")
 
 uploaded_files = st.file_uploader("📂 Drop ESA Files Here (Excel/CSV)", type=["xlsx", "csv"], accept_multiple_files=True)
 
@@ -171,7 +173,7 @@ if uploaded_files:
 
         if all_data:
             master_df = pd.concat(all_data, ignore_index=True)
-            matches, oob, ngcs_local, ngcs_outside = [], [], [], []
+            matches, oob, ngcs_local, ngcs_outside, blank_addrs = [], [], [], [], []
             
             prog_bar = st.progress(0)
             status_text = st.empty()
@@ -184,17 +186,22 @@ if uploaded_files:
                 raw_addr = row.get('address', '')
                 addr = clean_string(raw_addr).upper()
                 
-                # --- ORPHAN FILTER CHECK (Now sees the raw, unmodified string) ---
+                # --- NEW: Catch completely blank addresses immediately ---
+                if not addr:
+                    row['status'] = "Unmappable"
+                    row['reason'] = "Address field is blank/missing"
+                    blank_addrs.append(row)
+                    continue
+                
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Missing Number"
-                    if is_local_ngc(row, target_city, target_state, target_zips):
+                    if is_local_ngc(row, target_city, target_county, target_state, target_zips):
                         ngcs_local.append(row)
                     else:
                         ngcs_outside.append(row)
                     continue 
 
-                # --- ARCGIS SEARCH STRING ---
                 scrubbed_addr = scrub_address_for_arcgis(addr)
                 full_search_address = scrubbed_addr
                 
@@ -216,7 +223,6 @@ if uploaded_files:
                     if state: full_search_address += f", {state}"
                     if zip_code: full_search_address += f" {zip_code}"
 
-                # --- GEOCODE ---
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
@@ -238,14 +244,14 @@ if uploaded_files:
                     else:
                         row['status'] = "NGC (Not Found)"
                         row['reason'] = "Address not found by ArcGIS"
-                        if is_local_ngc(row, target_city, target_state, target_zips):
+                        if is_local_ngc(row, target_city, target_county, target_state, target_zips):
                             ngcs_local.append(row)
                         else:
                             ngcs_outside.append(row)
                 except Exception as e:
                     row['status'] = "Error"
                     row['reason'] = str(e)
-                    if is_local_ngc(row, target_city, target_state, target_zips):
+                    if is_local_ngc(row, target_city, target_county, target_state, target_zips):
                         ngcs_local.append(row)
                     else:
                         ngcs_outside.append(row)
@@ -259,6 +265,7 @@ if uploaded_files:
             st.session_state.oob = oob
             st.session_state.ngcs_local = ngcs_local
             st.session_state.ngcs_outside = ngcs_outside
+            st.session_state.blank_addrs = blank_addrs
             st.session_state.run_complete = True
 
 if st.session_state.run_complete:
@@ -266,13 +273,15 @@ if st.session_state.run_complete:
     oob = st.session_state.oob
     ngcs_local = st.session_state.ngcs_local
     ngcs_outside = st.session_state.ngcs_outside
+    blank_addrs = st.session_state.blank_addrs
 
     st.divider()
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("✅ Matches", len(matches))
     c2.metric("⚠️ Out of Bounds", len(oob))
     c3.metric("🟡 Local NGCs", len(ngcs_local))
     c4.metric("❌ Outside NGCs", len(ngcs_outside))
+    c5.metric("🗑️ Blank", len(blank_addrs))
 
     st.subheader("🗺️ Site Map")
     
@@ -371,7 +380,7 @@ if st.session_state.run_complete:
         st.dataframe(df_matches.sort_values(by='miles_from_site')[display_cols_matches], use_container_width=True)
 
     if ngcs_local:
-        st.subheader("🟡 Local Orphans (City, State, or Zip Matches Target)")
+        st.subheader("🟡 Local Orphans (City, County, State, or Zip Matches)")
         df_ngc_local = pd.DataFrame(ngcs_local)
         display_cols_local = ['address', 'reason']
         for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
@@ -385,6 +394,14 @@ if st.session_state.run_complete:
         for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_ngc_outside.columns: display_cols_outside.insert(-2, col)
         st.dataframe(df_ngc_outside[list(dict.fromkeys(display_cols_outside))], use_container_width=True)
+        
+    if blank_addrs:
+        st.subheader("🗑️ Blank Addresses (Unmappable)")
+        df_blanks = pd.DataFrame(blank_addrs)
+        display_cols_blanks = ['address', 'reason']
+        for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
+            if col in df_blanks.columns: display_cols_blanks.insert(-2, col)
+        st.dataframe(df_blanks[list(dict.fromkeys(display_cols_blanks))], use_container_width=True)
 
     # --- 5. EXPORT ---
     output = io.BytesIO()
@@ -393,6 +410,7 @@ if st.session_state.run_complete:
         if oob: pd.DataFrame(oob).to_excel(writer, sheet_name="Out_of_Bounds", index=False)
         if ngcs_local: pd.DataFrame(ngcs_local).to_excel(writer, sheet_name="Local_Orphans", index=False)
         if ngcs_outside: pd.DataFrame(ngcs_outside).to_excel(writer, sheet_name="Outside_Orphans", index=False)
+        if blank_addrs: pd.DataFrame(blank_addrs).to_excel(writer, sheet_name="Blank_Addresses", index=False)
     
     st.success("Analysis Complete!")
     st.download_button("📥 Download Final Excel Report", output.getvalue(), "ESA_Final_Report.xlsx")
