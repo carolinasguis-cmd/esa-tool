@@ -31,8 +31,8 @@ def is_vague_address(addr):
     if re.search(r'\b\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
-    # 4. Strict Directional Routing
-    if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST)\s+OF\b', addr):
+    # 4. Strict Directional Routing (UPGRADED to catch Corners, Intersections, and Sides)
+    if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+(OF|CORNER|INTERSECTION|SIDE|END|PORTION)\b', addr):
         return True
         
     # 5. Universal Box & Rural Route Catcher
@@ -48,15 +48,14 @@ def is_vague_address(addr):
     if any(term in addr for term in jargon_terms):
         return True
     
-    if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP)\b', addr):
+    # UPGRADED: Added LOCATED and SITUATED to catch narrative descriptions
+    if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
         return True
         
     facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE)\b'
     if re.search(facility_regex, addr) and not has_street:
         return True
 
-    # --- UPGRADED: LEGAL DESCRIPTION & SURVEY FILTER ---
-    # Now catches LOT and BLOCK descriptions
     legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL|LOT|BLOCK)\b'
     if re.search(legal_regex, addr) and not has_street:
         return True
@@ -67,7 +66,6 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # HIGHWAY FILTER
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I\s*-?|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
