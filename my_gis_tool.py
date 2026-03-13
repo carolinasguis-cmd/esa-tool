@@ -12,18 +12,30 @@ def is_vague_address(addr):
     
     if not addr: return True
     
+    # 1. PURE NUMBER GARBAGE FILTER
+    if not re.search(r'[A-Z]', addr):
+        return True
+    
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # 1. Distance markers
+    # 2. DATE CATCHER 
+    date_fragment = re.search(r'\b\d{1,2}\s*,\s*(?:19|20)\d{2}\b', addr)
+    date_slashes = re.search(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', addr)
+    date_months = re.search(r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{1,2}\b', addr)
+    
+    if (date_fragment or date_slashes or date_months) and not has_street:
+        return True
+    
+    # 3. Distance markers
     if re.search(r'\b\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
-    # 2. Strict Directional Routing
+    # 4. Strict Directional Routing
     if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST)\s+OF\b', addr):
         return True
         
-    # 3. Universal Box & Rural Route Catcher (Upgraded to catch '35A', '#12', and Rural Routes)
+    # 5. Universal Box & Rural Route Catcher
     if re.search(r'\bBOX\s*(?:#|NO\.?)?\s*\d+[A-Z]*\b', addr):
         return True
     if re.search(r'\b(RR|RURAL ROUTE|ROUTE|ROUTH|RT)\s*\d+.*\bBOX\b', addr):
@@ -43,13 +55,18 @@ def is_vague_address(addr):
     if re.search(facility_regex, addr) and not has_street:
         return True
 
+    # --- NEW: LEGAL DESCRIPTION & SURVEY FILTER ---
+    legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL)\b'
+    if re.search(legal_regex, addr) and not has_street:
+        return True
+
     if re.match(r'^#?\s*[A-Z0-9]+-[A-Z0-9]+', addr) and not has_street:
         return True
 
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # 4. HIGHWAY FILTER (Upgraded to catch typos like 'ROUTH' and 'RR')
+    # HIGHWAY FILTER
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I\s*-?|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
