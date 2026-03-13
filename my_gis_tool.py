@@ -15,7 +15,12 @@ def is_vague_address(addr):
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    if re.search(r'\b\d+(\.\d+)?\s*(MILE|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
+    # 1. Catch distance descriptions (Upgraded to catch decimals and zero-boundary numbers)
+    if re.search(r'(?:^|\s)\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
+        return True
+        
+    # 2. Strict Directional Routing Filter (Instantly catches N OF, WEST OF, etc.)
+    if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST)\s+OF\b', addr):
         return True
         
     if re.search(r'\bBOX\s*\d+\b', addr):
@@ -23,6 +28,7 @@ def is_vague_address(addr):
         
     if re.search(r'\b(LAT|LONG|LATITUDE|LONGITUDE)\s*:?\s*\d+', addr):
         return True
+        
     jargon_terms = ['CONTROL SECTION', 'LOG MILE', 'LOGMILE', ' N LONG', ' W LAT']
     if any(term in addr for term in jargon_terms):
         return True
@@ -76,7 +82,6 @@ def scrub_address_for_arcgis(addr):
     return " ".join(addr.split())
 
 def is_local_ngc(row, t_city, t_state, t_zips_list):
-    """Checks if the Orphan matches the Target City, State, or ANY of the Target Zips."""
     if not t_city and not t_state and not t_zips_list:
         return False
         
@@ -123,7 +128,6 @@ with st.sidebar:
     target_state = st.text_input("Target State (e.g., TX)").strip().upper()
     target_zips_input = st.text_input("Target Zip Code(s) (comma-separated)").strip()
     
-    # Process multiple zips
     target_zips = [z.strip() for z in target_zips_input.split(',') if z.strip()]
     
     st.divider()
@@ -177,7 +181,6 @@ if uploaded_files:
                     if cw in addr:
                         addr = addr.split(cw)[0].strip()
                 
-                # --- ORPHAN FILTER CHECK ---
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Missing Number"
@@ -187,7 +190,6 @@ if uploaded_files:
                         ngcs_outside.append(row)
                     continue 
 
-                # --- ARCGIS SEARCH STRING ---
                 scrubbed_addr = scrub_address_for_arcgis(addr)
                 full_search_address = scrubbed_addr
                 
@@ -209,7 +211,6 @@ if uploaded_files:
                     if state: full_search_address += f", {state}"
                     if zip_code: full_search_address += f" {zip_code}"
 
-                # --- GEOCODE ---
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
@@ -351,7 +352,6 @@ if st.session_state.run_complete:
         tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
     ))
     
-    # --- 4. RESULTS TABLES ---
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
@@ -379,7 +379,6 @@ if st.session_state.run_complete:
             if col in df_ngc_outside.columns: display_cols_outside.insert(-2, col)
         st.dataframe(df_ngc_outside[list(dict.fromkeys(display_cols_outside))], use_container_width=True)
 
-    # --- 5. EXPORT ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
