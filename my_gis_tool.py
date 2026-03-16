@@ -16,10 +16,15 @@ def is_vague_address(addr):
     if not re.search(r'[A-Z]', addr):
         return True
     
+    # --- NEW: CHAINED INTERSECTIONS & LIST FILTER ---
+    # Blocks descriptive multi-street areas like "I 70 AND I 71 AND WHITTIER"
+    if sum(addr.count(x) for x in [' & ', ' AND ', ' @ ', ' AT ']) > 1:
+        return True
+    
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
     has_street = any(suffix in addr for suffix in street_suffixes)
     
-    # 2. DATE CATCHER 
+    # 3. DATE CATCHER 
     date_fragment = re.search(r'\b\d{1,2}\s*,\s*(?:19|20)\d{2}\b', addr)
     date_slashes = re.search(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', addr)
     date_months = re.search(r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{1,2}\b', addr)
@@ -27,15 +32,15 @@ def is_vague_address(addr):
     if (date_fragment or date_slashes or date_months) and not has_street:
         return True
     
-    # 3. Distance markers
+    # 4. Distance markers
     if re.search(r'\b\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
-    # 4. Strict Directional Routing 
+    # 5. Strict Directional Routing 
     if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+(OF|CORNER|INTERSECTION|SIDE|END|PORTION)\b', addr):
         return True
         
-    # 5. Universal Box & Rural Route Catcher
+    # 6. Universal Box & Rural Route Catcher
     if re.search(r'\bBOX\s*(?:#|NO\.?)?\s*\d+[A-Z]*\b', addr):
         return True
     if re.search(r'\b(RR|RURAL ROUTE|ROUTE|ROUTH|RT)\s*\d+.*\bBOX\b', addr):
@@ -44,7 +49,6 @@ def is_vague_address(addr):
     if re.search(r'\b(LAT|LONG|LATITUDE|LONGITUDE)\s*:?\s*\d+', addr):
         return True
         
-    # UPGRADED: Added Milepost terms to catch DOT formats
     jargon_terms = ['CONTROL SECTION', 'LOG MILE', 'LOGMILE', ' N LONG', ' W LAT', 'MILEPOST', 'MILE POST']
     if any(term in addr for term in jargon_terms):
         return True
@@ -56,7 +60,6 @@ def is_vague_address(addr):
     if re.search(facility_regex, addr) and not has_street:
         return True
 
-    # UPGRADED: Added SECT and SECTION to catch highway/survey formats
     legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL|LOT|BLOCK|SECT|SECTION)\b'
     if re.search(legal_regex, addr) and not has_street:
         return True
@@ -80,7 +83,6 @@ def is_vague_address(addr):
     
     addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
     
-    # Checks intersection on the CORE address only
     is_intersection = any(x in addr_core for x in [' & ', ' AND ', ' @ ', ' AT '])
     has_real_number = any(char.isdigit() for char in addr_without_zips)
     
