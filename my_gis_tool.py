@@ -44,7 +44,8 @@ def is_vague_address(addr):
     if re.search(r'\b(LAT|LONG|LATITUDE|LONGITUDE)\s*:?\s*\d+', addr):
         return True
         
-    jargon_terms = ['CONTROL SECTION', 'LOG MILE', 'LOGMILE', ' N LONG', ' W LAT']
+    # UPGRADED: Added Milepost terms to catch DOT formats
+    jargon_terms = ['CONTROL SECTION', 'LOG MILE', 'LOGMILE', ' N LONG', ' W LAT', 'MILEPOST', 'MILE POST']
     if any(term in addr for term in jargon_terms):
         return True
     
@@ -55,7 +56,8 @@ def is_vague_address(addr):
     if re.search(facility_regex, addr) and not has_street:
         return True
 
-    legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL|LOT|BLOCK)\b'
+    # UPGRADED: Added SECT and SECTION to catch highway/survey formats
+    legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL|LOT|BLOCK|SECT|SECTION)\b'
     if re.search(legal_regex, addr) and not has_street:
         return True
 
@@ -63,7 +65,6 @@ def is_vague_address(addr):
         return True
 
     # --- THE CORE ADDRESS ISOLATOR ---
-    # Temporarily chops off routing phrases to prevent "AND" from triggering a false intersection
     addr_core = addr
     chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ']
     for cw in chop_words:
