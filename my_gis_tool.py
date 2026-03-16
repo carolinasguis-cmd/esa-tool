@@ -20,14 +20,15 @@ def is_vague_address(addr):
     if sum(addr.count(x) for x in [' & ', ' AND ', ' @ ', ' AT ']) > 1:
         return True
     
-    # --- NEW: MULTIPLE ADDRESS CATCHER ---
-    # Catches lists of addresses mashed together (e.g., "1000 MAIN ST, 50 W TOWN ST")
+    # MULTIPLE ADDRESS CATCHER 
     address_blocks = re.findall(r'\b\d+\s+[A-Z\s]+?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|ROAD|STREET)\b', addr)
     if len(address_blocks) > 1:
         return True
     
-    street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
-    has_street = any(suffix in addr for suffix in street_suffixes)
+    # --- UPGRADED: STRICT STREET SUFFIX CHECK ---
+    # Now uses strict word boundaries (\b) so "STATION" doesn't falsely trigger "ST"
+    street_regex = r'\b(RD|ST|AVE|BLVD|DR|LN|WAY|PKWY|HWY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL)\b'
+    has_street = bool(re.search(street_regex, addr))
     
     # 3. DATE CATCHER 
     date_fragment = re.search(r'\b\d{1,2}\s*,\s*(?:19|20)\d{2}\b', addr)
@@ -63,9 +64,13 @@ def is_vague_address(addr):
     if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
         return True
         
-    # UPGRADED: Added PENINSULA, PARK, and TEST
-    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST)\b'
+    # UPGRADED: Added PUMPING STATION
+    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|PUMPING STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST|MOTOR POOL|BUILDING|BLDG)\b'
     if re.search(facility_regex, addr) and not has_street:
+        return True
+
+    # ACREAGE SIZE BLOCKER
+    if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES)\b', addr):
         return True
 
     legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL|LOT|BLOCK|SECT|SECTION)\b'
@@ -82,7 +87,7 @@ def is_vague_address(addr):
         if cw in addr_core:
             addr_core = addr_core.split(cw)[0].strip()
 
-    addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
+    addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
     # HIGHWAY FILTER
@@ -91,8 +96,7 @@ def is_vague_address(addr):
     
     addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
     
-    # --- UPGRADED FAKE INTERSECTION BLOCKER ---
-    # Now requires the string to actually have a street suffix to count as an intersection
+    # FAKE INTERSECTION BLOCKER
     is_intersection = any(x in addr_core for x in [' & ', ' AND ', ' @ ', ' AT ']) and has_street
     has_real_number = any(char.isdigit() for char in addr_without_zips)
     
@@ -123,7 +127,7 @@ def scrub_address_for_arcgis(addr):
     addr = addr.replace(' AT ', ' AND ')
     addr = addr.replace(' @ ', ' AND ')
     
-    addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
+    addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
     addr = re.sub(r'^(\d+)[A-Z]\b', r'\1', addr)
     addr = re.sub(r'\bINDUS\b', 'INDUSTRIAL', addr)
