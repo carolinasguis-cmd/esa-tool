@@ -16,9 +16,14 @@ def is_vague_address(addr):
     if not re.search(r'[A-Z]', addr):
         return True
     
-    # --- NEW: CHAINED INTERSECTIONS & LIST FILTER ---
-    # Blocks descriptive multi-street areas like "I 70 AND I 71 AND WHITTIER"
+    # 2. CHAINED INTERSECTIONS & LIST FILTER
     if sum(addr.count(x) for x in [' & ', ' AND ', ' @ ', ' AT ']) > 1:
+        return True
+    
+    # --- NEW: MULTIPLE ADDRESS CATCHER ---
+    # Catches lists of addresses mashed together (e.g., "1000 MAIN ST, 50 W TOWN ST")
+    address_blocks = re.findall(r'\b\d+\s+[A-Z\s]+?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|ROAD|STREET)\b', addr)
+    if len(address_blocks) > 1:
         return True
     
     street_suffixes = [' RD', ' ST', ' AVE', ' BLVD', ' DR', ' LN', ' WAY', ' PKWY', ' HWY', ' PIKE', ' ROAD', ' STREET']
@@ -37,7 +42,9 @@ def is_vague_address(addr):
         return True
         
     # 5. Strict Directional Routing 
-    if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+(OF|CORNER|INTERSECTION|SIDE|END|PORTION)\b', addr):
+    if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+(OF|CORNER|C/O|INTERSECTION|SIDE|END|PORTION)\b', addr):
+        return True
+    if re.search(r'\b(NWC|NEC|SWC|SEC)\b', addr):
         return True
         
     # 6. Universal Box & Rural Route Catcher
@@ -56,7 +63,8 @@ def is_vague_address(addr):
     if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
         return True
         
-    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE)\b'
+    # UPGRADED: Added PENINSULA, PARK, and TEST
+    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST)\b'
     if re.search(facility_regex, addr) and not has_street:
         return True
 
@@ -83,7 +91,9 @@ def is_vague_address(addr):
     
     addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
     
-    is_intersection = any(x in addr_core for x in [' & ', ' AND ', ' @ ', ' AT '])
+    # --- UPGRADED FAKE INTERSECTION BLOCKER ---
+    # Now requires the string to actually have a street suffix to count as an intersection
+    is_intersection = any(x in addr_core for x in [' & ', ' AND ', ' @ ', ' AT ']) and has_street
     has_real_number = any(char.isdigit() for char in addr_without_zips)
     
     if not has_real_number and not is_intersection:
