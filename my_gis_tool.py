@@ -31,7 +31,7 @@ def is_vague_address(addr):
     if re.search(r'\b\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
         return True
         
-    # 4. Strict Directional Routing (UPGRADED to catch Corners, Intersections, and Sides)
+    # 4. Strict Directional Routing 
     if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+(OF|CORNER|INTERSECTION|SIDE|END|PORTION)\b', addr):
         return True
         
@@ -48,7 +48,6 @@ def is_vague_address(addr):
     if any(term in addr for term in jargon_terms):
         return True
     
-    # UPGRADED: Added LOCATED and SITUATED to catch narrative descriptions
     if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
         return True
         
@@ -63,15 +62,25 @@ def is_vague_address(addr):
     if re.match(r'^#?\s*[A-Z0-9]+-[A-Z0-9]+', addr) and not has_street:
         return True
 
-    addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
+    # --- THE CORE ADDRESS ISOLATOR ---
+    # Temporarily chops off routing phrases to prevent "AND" from triggering a false intersection
+    addr_core = addr
+    chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ']
+    for cw in chop_words:
+        if cw in addr_core:
+            addr_core = addr_core.split(cw)[0].strip()
+
+    addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
+    # HIGHWAY FILTER
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I\s*-?|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
     
-    is_intersection = any(x in addr for x in [' & ', ' AND ', ' @ ', ' AT '])
+    # Checks intersection on the CORE address only
+    is_intersection = any(x in addr_core for x in [' & ', ' AND ', ' @ ', ' AT '])
     has_real_number = any(char.isdigit() for char in addr_without_zips)
     
     if not has_real_number and not is_intersection:
