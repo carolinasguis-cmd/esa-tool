@@ -25,8 +25,7 @@ def is_vague_address(addr):
     if len(address_blocks) > 1:
         return True
     
-    # --- UPGRADED: STRICT STREET SUFFIX CHECK ---
-    # Now uses strict word boundaries (\b) so "STATION" doesn't falsely trigger "ST"
+    # STRICT STREET SUFFIX CHECK 
     street_regex = r'\b(RD|ST|AVE|BLVD|DR|LN|WAY|PKWY|HWY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL)\b'
     has_street = bool(re.search(street_regex, addr))
     
@@ -64,8 +63,8 @@ def is_vague_address(addr):
     if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
         return True
         
-    # UPGRADED: Added PUMPING STATION
-    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|PUMPING STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST|MOTOR POOL|BUILDING|BLDG)\b'
+    # --- UPGRADED: Added DRAIN, DITCH, CREEK, RIVER, CANAL, TRIBUTARY, STREAM ---
+    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|PUMPING STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST|MOTOR POOL|BUILDING|BLDG|DRAIN|DITCH|CREEK|RIVER|CANAL|TRIBUTARY|STREAM)\b'
     if re.search(facility_regex, addr) and not has_street:
         return True
 
@@ -90,8 +89,8 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # HIGHWAY FILTER
-    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I\s*-?|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
+    # --- UPGRADED HIGHWAY FILTER: Now catches hyphens (TX-45) ---
+    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*-?\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
