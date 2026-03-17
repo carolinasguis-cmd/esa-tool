@@ -63,7 +63,6 @@ def is_vague_address(addr):
     if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
         return True
         
-    # --- UPGRADED: Added DRAIN, DITCH, CREEK, RIVER, CANAL, TRIBUTARY, STREAM ---
     facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|PUMPING STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST|MOTOR POOL|BUILDING|BLDG|DRAIN|DITCH|CREEK|RIVER|CANAL|TRIBUTARY|STREAM)\b'
     if re.search(facility_regex, addr) and not has_street:
         return True
@@ -89,7 +88,7 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # --- UPGRADED HIGHWAY FILTER: Now catches hyphens (TX-45) ---
+    # HIGHWAY FILTER
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT)\s*-?\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
@@ -134,9 +133,12 @@ def scrub_address_for_arcgis(addr):
     return " ".join(addr.split())
 
 def is_local_ngc(row, t_city, t_county, t_state, t_zips_list):
-    if not t_city and not t_county and not t_state and not t_zips_list:
-        return False
-        
+    """
+    UPGRADED LOGIC: 
+    1. If record has a zip, it MUST match target zips to be local.
+    2. If record has no zip, fallback to checking city, county, or state.
+    """
+    # Extract record values
     r_city = next((clean_string(row[c]).upper() for c in row.index if c in ['city', 'site city', 'site_city']), "")
     r_county = next((clean_string(row[c]).upper() for c in row.index if c in ['county', 'site county', 'site_county']), "")
     r_state = next((clean_string(row[c]).upper() for c in row.index if c in ['state', 'st', 'site state', 'site_state']), "")
@@ -147,17 +149,23 @@ def is_local_ngc(row, t_city, t_county, t_state, t_zips_list):
             r_zip = clean_string(row[col])
             break
 
-    t_county_clean = t_county.replace(" COUNTY", "").strip()
-    r_county_clean = r_county.replace(" COUNTY", "").strip()
+    # 1. STRICT ZIP Bouncer (Only fires if the record actually has a zip AND you provided targets)
+    if r_zip and t_zips_list:
+        match_found = False
+        for z in t_zips_list:
+            if z in r_zip or r_zip in z:
+                match_found = True
+                break
+        # Returns True if zip matches, Returns False immediately if zip doesn't match
+        return match_found 
+
+    # 2. THE FALLBACK (Fires if the record has a blank zip, or you didn't input any zips)
+    t_county_clean = t_county.replace(" COUNTY", "").strip() if t_county else ""
+    r_county_clean = r_county.replace(" COUNTY", "").strip() if r_county else ""
 
     if t_city and r_city and (t_city in r_city or r_city in t_city): return True
     if t_county_clean and r_county_clean and (t_county_clean in r_county_clean or r_county_clean in t_county_clean): return True
     if t_state and r_state and (t_state == r_state or t_state in r_state or r_state in t_state): return True
-    
-    if r_zip and t_zips_list:
-        for z in t_zips_list:
-            if z in r_zip or r_zip in z:
-                return True
     
     return False
 
@@ -236,6 +244,21 @@ if uploaded_files:
                 if not addr:
                     row['status'] = "Unmappable"
                     row['reason'] = "Address field is blank/missing"
+                    blank_addrs.append(row)
+                    continue
+                    
+                # --- JUNK DATA CATCHER ---
+                is_junk = False
+                junk_exact = ['GENERIC', 'UNKNOWN', 'VARIOUS', 'MULTIPLE', 'NONE', 'N/A', 'CITYWIDE', 'COUNTYWIDE', 'THROUGHOUT', 'TBD', 'PENDING', 'UNNAMED', 'NO ADDRESS']
+                
+                if addr in junk_exact:
+                    is_junk = True
+                elif any(addr.startswith(prefix) for prefix in ['COVERS ALL AREAS', 'VARIOUS LOCATIONS', 'MULTIPLE LOCATIONS', 'NO PHYSICAL ADDRESS']):
+                    is_junk = True
+                    
+                if is_junk:
+                    row['status'] = "Unmappable"
+                    row['reason'] = "Junk/Filler Data"
                     blank_addrs.append(row)
                     continue
                 
