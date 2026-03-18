@@ -16,6 +16,11 @@ def is_vague_address(addr):
     if not re.search(r'[A-Z]', addr):
         return True
         
+    # --- NEW: DOT HIGHWAY INTERSECTION BLOCKER ---
+    # Instantly kills Texas/DOT highway intersections (e.g., "SH 35 AT", "FM 10 AND")
+    if re.search(r'\b(SH|FM|RM|IH|TX|US|I|HWY|SPUR|LOOP)\s*-?\s*\d+[A-Z]?\s+(AT|AND|&|@|INTERSECTION)\b', addr):
+        return True
+        
     # ABSOLUTE INCIDENT & INFRASTRUCTURE BLOCKER
     if re.search(r'\b(ACCIDENT|CRASH|SPILL|INCIDENT|FIRE|BRIDGE OVER|OVERPASS)\b', addr):
         return True
@@ -83,8 +88,7 @@ def is_vague_address(addr):
     if re.match(r'^#?\s*[A-Z0-9]+-[A-Z0-9]+', addr) and not has_street:
         return True
 
-    # --- UPGRADED: CORE ADDRESS ISOLATOR ---
-    # Added ' AT ' and ' @ ' to chop off intersection tails before checking for numbers
+    # CORE ADDRESS ISOLATOR
     addr_core = addr
     chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ', ' AT ', ' @ ']
     for cw in chop_words:
@@ -94,14 +98,13 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # HIGHWAY FILTER
-    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT|SPUR|LOOP)\s*-?\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
+    # --- UPGRADED HIGHWAY FILTER: Added SH, FM, RM, IH explicitly ---
+    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|SH|FM|RM|IH|US|I|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT|SPUR|LOOP)\s*-?\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
     
-    # --- UPGRADED: THE NUMBER ENFORCER ---
-    # Intersections no longer get a free pass. If there is no building number, it is an Orphan.
+    # THE NUMBER ENFORCER
     has_real_number = any(char.isdigit() for char in addr_without_zips)
     
     if not has_real_number:
