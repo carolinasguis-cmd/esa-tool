@@ -15,8 +15,12 @@ def is_vague_address(addr):
     # 1. PURE NUMBER GARBAGE FILTER
     if not re.search(r'[A-Z]', addr):
         return True
+        
+    # ABSOLUTE INCIDENT & INFRASTRUCTURE BLOCKER
+    if re.search(r'\b(ACCIDENT|CRASH|SPILL|INCIDENT|FIRE|BRIDGE OVER|OVERPASS)\b', addr):
+        return True
     
-    # 2. CHAINED INTERSECTIONS & LIST FILTER
+    # CHAINED INTERSECTIONS & LIST FILTER
     if sum(addr.count(x) for x in [' & ', ' AND ', ' @ ', ' AT ']) > 1:
         return True
     
@@ -60,10 +64,10 @@ def is_vague_address(addr):
     if any(term in addr for term in jargon_terms):
         return True
     
-    if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
+    if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|NORTHBOUND|SOUTHBOUND|EASTBOUND|WESTBOUND|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
         return True
         
-    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|PUMPING STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST|MOTOR POOL|BUILDING|BLDG|DRAIN|DITCH|CREEK|RIVER|CANAL|TRIBUTARY|STREAM)\b'
+    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|PUMPING STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST|MOTOR POOL|BUILDING|BLDG|DRAIN|DITCH|CREEK|RIVER|CANAL|TRIBUTARY|STREAM|BRIDGE|UNDERPASS|TUNNEL)\b'
     if re.search(facility_regex, addr) and not has_street:
         return True
 
@@ -79,9 +83,10 @@ def is_vague_address(addr):
     if re.match(r'^#?\s*[A-Z0-9]+-[A-Z0-9]+', addr) and not has_street:
         return True
 
-    # --- THE CORE ADDRESS ISOLATOR ---
+    # --- UPGRADED: CORE ADDRESS ISOLATOR ---
+    # Added ' AT ' and ' @ ' to chop off intersection tails before checking for numbers
     addr_core = addr
-    chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ']
+    chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ', ' AT ', ' @ ']
     for cw in chop_words:
         if cw in addr_core:
             addr_core = addr_core.split(cw)[0].strip()
@@ -89,17 +94,17 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
 
-    # --- UPGRADED HIGHWAY FILTER: Now catches SPUR and LOOP ---
+    # HIGHWAY FILTER
     addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|US|I|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT|SPUR|LOOP)\s*-?\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
     addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
     
     addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
     
-    # FAKE INTERSECTION BLOCKER
-    is_intersection = any(x in addr_core for x in [' & ', ' AND ', ' @ ', ' AT ']) and has_street
+    # --- UPGRADED: THE NUMBER ENFORCER ---
+    # Intersections no longer get a free pass. If there is no building number, it is an Orphan.
     has_real_number = any(char.isdigit() for char in addr_without_zips)
     
-    if not has_real_number and not is_intersection:
+    if not has_real_number:
         return True 
         
     return False
