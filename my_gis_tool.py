@@ -12,105 +12,40 @@ def is_vague_address(addr):
     
     if not addr: return True
     
-    # 1. PURE NUMBER GARBAGE FILTER
-    if not re.search(r'[A-Z]', addr):
-        return True
-        
-    # --- NEW: DOT HIGHWAY INTERSECTION BLOCKER ---
-    # Instantly kills Texas/DOT highway intersections (e.g., "SH 35 AT", "FM 10 AND")
-    if re.search(r'\b(SH|FM|RM|IH|TX|US|I|HWY|SPUR|LOOP)\s*-?\s*\d+[A-Z]?\s+(AT|AND|&|@|INTERSECTION)\b', addr):
-        return True
-        
-    # ABSOLUTE INCIDENT & INFRASTRUCTURE BLOCKER
-    if re.search(r'\b(ACCIDENT|CRASH|SPILL|INCIDENT|FIRE|BRIDGE OVER|OVERPASS)\b', addr):
-        return True
+    # --- NEW: COORDINATE BYPASS (VIP DOOR) ---
+    # If it contains a degree symbol or looks like decimal lat/long, skip all rules and map it!
+    if '°' in addr or re.search(r'^-?\d{2}\.\d+\s*,?\s*-?\d{2,3}\.\d+', addr):
+        return False 
     
-    # CHAINED INTERSECTIONS & LIST FILTER
-    if sum(addr.count(x) for x in [' & ', ' AND ', ' @ ', ' AT ']) > 1:
-        return True
+    # 1. PURE NUMBER GARBAGE & EXACT JUNK DATA
+    # (Coordinates are protected from this because they bypass above)
+    if not re.search(r'[A-Z]', addr): return True
+    if re.search(r'\b(PO BOX|P\.O\. BOX|P O BOX)\b', addr): return True
     
-    # MULTIPLE ADDRESS CATCHER 
+    # 2. ACREAGE & MULTIPLE ADDRESS CATCHER
+    if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES)\b', addr): return True
     address_blocks = re.findall(r'\b\d+\s+[A-Z\s]+?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|ROAD|STREET)\b', addr)
-    if len(address_blocks) > 1:
-        return True
-    
-    # STRICT STREET SUFFIX CHECK 
-    street_regex = r'\b(RD|ST|AVE|BLVD|DR|LN|WAY|PKWY|HWY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL)\b'
-    has_street = bool(re.search(street_regex, addr))
-    
-    # 3. DATE CATCHER 
-    date_fragment = re.search(r'\b\d{1,2}\s*,\s*(?:19|20)\d{2}\b', addr)
-    date_slashes = re.search(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', addr)
-    date_months = re.search(r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{1,2}\b', addr)
-    
-    if (date_fragment or date_slashes or date_months) and not has_street:
-        return True
-    
-    # 4. Distance markers
-    if re.search(r'\b\d*\.?\d+\s*(MILE|MILES|MI\b|FT\b|FEET\b)', addr) or re.search(r'\b(MILE|MILES|MI\b|FT\b|FEET\b)\s*\d+(\.\d+)?', addr): 
-        return True
-        
-    # 5. Strict Directional Routing 
-    if re.search(r'\b(N|S|E|W|NW|NE|SW|SE|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\s+(OF|CORNER|C/O|INTERSECTION|SIDE|END|PORTION)\b', addr):
-        return True
-    if re.search(r'\b(NWC|NEC|SWC|SEC)\b', addr):
-        return True
-        
-    # 6. Universal Box & Rural Route Catcher
-    if re.search(r'\bBOX\s*(?:#|NO\.?)?\s*\d+[A-Z]*\b', addr):
-        return True
-    if re.search(r'\b(RR|RURAL ROUTE|ROUTE|ROUTH|RT)\s*\d+.*\bBOX\b', addr):
-        return True
-        
-    if re.search(r'\b(LAT|LONG|LATITUDE|LONGITUDE)\s*:?\s*\d+', addr):
-        return True
-        
-    jargon_terms = ['CONTROL SECTION', 'LOG MILE', 'LOGMILE', ' N LONG', ' W LAT', 'MILEPOST', 'MILE POST']
-    if any(term in addr for term in jargon_terms):
-        return True
-    
-    if re.search(r'\b(NEAR|ADJACENT|BEHIND|VICINITY|APPROX|PO BOX|P\.O\. BOX|P O BOX|P\.O\.BOX|EB|WB|NB|SB|NORTHBOUND|SOUTHBOUND|EASTBOUND|WESTBOUND|EXIT|EXI|ON RAMP|OFF RAMP|LOCATED|SITUATED)\b', addr):
-        return True
-        
-    facility_regex = r'\b(AIRPORT|AFB|BASE|CAMPUS|PORT|PIER|TERMINAL|WELL|PUMP STATION|PUMPING STATION|LIFT STATION|SUBSTATION|PIPELINE|OUTFALL|TANK|LEASE|MINE|PIT|QUARRY|FACILITY|PLANT|ANCHORAGE|UST|AST|LUST|SWMU|AOC|PENINSULA|PARK|TEST|MOTOR POOL|BUILDING|BLDG|DRAIN|DITCH|CREEK|RIVER|CANAL|TRIBUTARY|STREAM|BRIDGE|UNDERPASS|TUNNEL)\b'
-    if re.search(facility_regex, addr) and not has_street:
-        return True
+    if len(address_blocks) > 1: return True
 
-    # ACREAGE SIZE BLOCKER
-    if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES)\b', addr):
-        return True
-
-    # REGIONAL, ZONING & LEGAL FILTER 
-    legal_regex = r'\b(ACRE|ACRES|SURVEY|ABSTRACT|ABS|TRACT|PARCEL|LOT|BLOCK|SECT|SECTION|ZONE|DISTRICT|REGION|AREA|PORTION|LEGAL)\b'
-    if re.search(legal_regex, addr) and not has_street:
-        return True
-
-    if re.match(r'^#?\s*[A-Z0-9]+-[A-Z0-9]+', addr) and not has_street:
-        return True
-
-    # CORE ADDRESS ISOLATOR
+    # 3. CORE ADDRESS ISOLATOR
     addr_core = addr
-    chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ', ' AT ', ' @ ']
+    chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ', ' AT ', ' @ ', ' & ', ' AND ', ' / ']
     for cw in chop_words:
         if cw in addr_core:
             addr_core = addr_core.split(cw)[0].strip()
 
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
-    addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites)
+    addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites).strip()
 
-    # --- UPGRADED HIGHWAY FILTER: Added SH, FM, RM, IH explicitly ---
-    addr_without_hwy = re.sub(r'\b([A-Z]{2}|HWY|HIGHWAY|SH|FM|RM|IH|US|I|SR|ROUTE|ROUTH|RR|STATE ROUTE|COUNTY ROAD|USR|CR|PR|INTERSTATE|INT|RTE|RT|SPUR|LOOP)\s*-?\s*\d+[A-Z0-9\-]*\b', '', addr_no_suites)
-    addr_without_ordinals = re.sub(r'\b\d+(ST|ND|RD|TH)\b', '', addr_without_hwy)
+    # --- 4. THE STRICT WHITELIST BOUNCER (UPGRADED) ---
+    # Upgraded to allow 0 letters between number and suffix (for "123 HWY")
+    # Added HIGHWAY, INTERSTATE, CO RD, COUNTY ROAD
+    whitelist_regex = r'^\s*\d{1,6}[A-Z]?\s+[A-Z0-9\s\.\-]*?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|HWY|HIGHWAY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE)\b'
     
-    addr_without_zips = re.sub(r'\b\d{5}(?:-\d{4})?\s*$', '', addr_without_ordinals)
-    
-    # THE NUMBER ENFORCER
-    has_real_number = any(char.isdigit() for char in addr_without_zips)
-    
-    if not has_real_number:
-        return True 
+    if re.search(whitelist_regex, addr_no_suites):
+        return False # Passed the test! It is a structurally valid physical address.
         
-    return False
+    return True # Failed the formula. Throw it to the Orphans immediately.
 
 def clean_string(val):
     if pd.isna(val): return ""
