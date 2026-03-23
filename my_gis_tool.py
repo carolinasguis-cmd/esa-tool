@@ -14,20 +14,20 @@ def is_vague_address(addr):
     
     if not addr: return True
     
-    # COORDINATE BYPASS (VIP DOOR)
+    # --- COORDINATE BYPASS (VIP DOOR) ---
     if '°' in addr or re.search(r'^-?\d{2}\.\d+\s*,?\s*-?\d{2,3}\.\d+', addr):
         return False 
     
-    # PURE NUMBER GARBAGE & EXACT JUNK DATA
+    # 1. PURE NUMBER GARBAGE & EXACT JUNK DATA
     if not re.search(r'[A-Z]', addr): return True
     if re.search(r'\b(PO BOX|P\.O\. BOX|P O BOX)\b', addr): return True
     
-    # ACREAGE & MULTIPLE ADDRESS CATCHER
+    # 2. ACREAGE & MULTIPLE ADDRESS CATCHER
     if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES)\b', addr): return True
     address_blocks = re.findall(r'\b\d+\s+[A-Z\s]+?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|ROAD|STREET)\b', addr)
     if len(address_blocks) > 1: return True
 
-    # CORE ADDRESS ISOLATOR
+    # 3. CORE ADDRESS ISOLATOR
     addr_core = addr
     chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ', ' AT ', ' @ ', ' & ', ' AND ', ' / ']
     for cw in chop_words:
@@ -37,7 +37,7 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites).strip()
 
-    # THE STRICT WHITELIST BOUNCER
+    # --- 4. THE STRICT WHITELIST BOUNCER ---
     whitelist_regex = r'^\s*\d{1,6}[A-Z]?\s+[A-Z0-9\s\.\-]*?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|HWY|HIGHWAY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE)\b'
     
     if re.search(whitelist_regex, addr_no_suites):
@@ -202,7 +202,6 @@ if uploaded_files:
                     blank_addrs.append(row)
                     continue
                     
-                # JUNK DATA CATCHER (This puts GENERIC in the Trash!)
                 is_junk = False
                 junk_exact = ['GENERIC', 'UNKNOWN', 'VARIOUS', 'MULTIPLE', 'NONE', 'N/A', 'CITYWIDE', 'COUNTYWIDE', 'THROUGHOUT', 'TBD', 'PENDING', 'UNNAMED', 'NO ADDRESS']
                 
