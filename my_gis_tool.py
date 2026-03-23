@@ -6,28 +6,28 @@ import io
 import pydeck as pdk
 import time
 import re
+import geopandas as gpd
+from shapely.geometry import Point
 
 def is_vague_address(addr):
     addr = str(addr).upper().strip()
     
     if not addr: return True
     
-    # --- NEW: COORDINATE BYPASS (VIP DOOR) ---
-    # If it contains a degree symbol or looks like decimal lat/long, skip all rules and map it!
+    # COORDINATE BYPASS (VIP DOOR)
     if '°' in addr or re.search(r'^-?\d{2}\.\d+\s*,?\s*-?\d{2,3}\.\d+', addr):
         return False 
     
-    # 1. PURE NUMBER GARBAGE & EXACT JUNK DATA
-    # (Coordinates are protected from this because they bypass above)
+    # PURE NUMBER GARBAGE & EXACT JUNK DATA
     if not re.search(r'[A-Z]', addr): return True
     if re.search(r'\b(PO BOX|P\.O\. BOX|P O BOX)\b', addr): return True
     
-    # 2. ACREAGE & MULTIPLE ADDRESS CATCHER
+    # ACREAGE & MULTIPLE ADDRESS CATCHER
     if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES)\b', addr): return True
     address_blocks = re.findall(r'\b\d+\s+[A-Z\s]+?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|ROAD|STREET)\b', addr)
     if len(address_blocks) > 1: return True
 
-    # 3. CORE ADDRESS ISOLATOR
+    # CORE ADDRESS ISOLATOR
     addr_core = addr
     chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ', ' FROM ', ' AT ', ' @ ', ' & ', ' AND ', ' / ']
     for cw in chop_words:
@@ -37,15 +37,13 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites).strip()
 
-    # --- 4. THE STRICT WHITELIST BOUNCER (UPGRADED) ---
-    # Upgraded to allow 0 letters between number and suffix (for "123 HWY")
-    # Added HIGHWAY, INTERSTATE, CO RD, COUNTY ROAD
+    # THE STRICT WHITELIST BOUNCER
     whitelist_regex = r'^\s*\d{1,6}[A-Z]?\s+[A-Z0-9\s\.\-]*?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|HWY|HIGHWAY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE)\b'
     
     if re.search(whitelist_regex, addr_no_suites):
-        return False # Passed the test! It is a structurally valid physical address.
+        return False 
         
-    return True # Failed the formula. Throw it to the Orphans immediately.
+    return True 
 
 def clean_string(val):
     if pd.isna(val): return ""
@@ -56,7 +54,6 @@ def clean_string(val):
 
 def scrub_address_for_arcgis(addr):
     addr = addr.upper()
-    
     addr = addr.split('/')[0].split('(')[0].strip()
     
     chop_words = [' BTWN ', ' BETWEEN ', ' SE OF ', ' SW OF ', ' NE OF ', ' NW OF ', ' NORTH OF ', ' SOUTH OF ', ' EAST OF ', ' WEST OF ', ' N OF ', ' S OF ', ' E OF ', ' W OF ']
@@ -68,7 +65,6 @@ def scrub_address_for_arcgis(addr):
     addr = re.sub(r'\b(EB|WB|NB|SB)\b', '', addr)
     addr = addr.replace(' AT ', ' AND ')
     addr = addr.replace(' @ ', ' AND ')
-    
     addr = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr)
     addr = re.sub(r'#\s*[A-Z0-9-]+', '', addr)
     addr = re.sub(r'^(\d+)[A-Z]\b', r'\1', addr)
@@ -117,19 +113,39 @@ if "run_complete" not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Project Settings")
     st.divider()
-    st.subheader("📍 Target Property Coordinates")
-    site_lat = st.number_input("Site Latitude", format="%.6f", value=33.927600)
-    site_lon = st.number_input("Site Longitude", format="%.6f", value=-84.247200)
+    
+    st.subheader("📍 Target Property Definition")
+    tp_mode = st.radio("How do you want to define the site?", ["Single Point (Lat/Lon)", "Polygon Area (Zipped Shapefile / GeoJSON)"])
+    
+    site_lat, site_lon = 33.927600, -84.247200 # Defaults
+    tp_polygon = None
+    tp_polygon_gdf = None
+    
+    if tp_mode == "Single Point (Lat/Lon)":
+        site_lat = st.number_input("Site Latitude", format="%.6f", value=33.927600)
+        site_lon = st.number_input("Site Longitude", format="%.6f", value=-84.247200)
+    else:
+        st.caption("Upload a .zip file containing your shapefile (.shp, .shx, .dbf, .prj) OR a .geojson file.")
+        tp_file = st.file_uploader("Upload Area Polygon", type=["zip", "geojson"])
+        if tp_file:
+            try:
+                tp_polygon_gdf = gpd.read_file(tp_file)
+                tp_polygon_gdf = tp_polygon_gdf.to_crs(epsg=4326) # Ensure WGS84
+                tp_polygon = tp_polygon_gdf.geometry.unary_union
+                site_lat = tp_polygon.centroid.y
+                site_lon = tp_polygon.centroid.x
+                st.success("Polygon successfully loaded!")
+            except Exception as e:
+                st.error(f"Error reading shapefile. Ensure it is zipped properly. Details: {e}")
+
     search_radius = st.slider("Search Radius (Miles)", 0.1, 2.0, 0.5)
     
     st.divider()
     st.subheader("🏙️ Target Property Details")
-    st.caption("Used to sort Orphans into Local vs. Outside.")
     target_city = st.text_input("Target City").strip().upper()
-    target_county = st.text_input("Target County (e.g., Guadalupe)").strip().upper()
-    target_state = st.text_input("Target State (e.g., TX)").strip().upper()
+    target_county = st.text_input("Target County").strip().upper()
+    target_state = st.text_input("Target State").strip().upper()
     target_zips_input = st.text_input("Target Zip Code(s) (comma-separated)").strip()
-    
     target_zips = [z.strip() for z in target_zips_input.split(',') if z.strip()]
     
     st.divider()
@@ -144,6 +160,10 @@ uploaded_files = st.file_uploader("📂 Drop ESA Files Here (Excel/CSV)", type=[
 
 if uploaded_files:
     if st.button("🚀 Run Analysis"):
+        if tp_mode == "Polygon Area" and not tp_polygon:
+            st.error("Please upload a Polygon zip file or switch back to Single Point mode.")
+            st.stop()
+            
         geolocator = ArcGIS()
         site_coords = (site_lat, site_lon)
         all_data = []
@@ -182,6 +202,7 @@ if uploaded_files:
                     blank_addrs.append(row)
                     continue
                     
+                # JUNK DATA CATCHER (This puts GENERIC in the Trash!)
                 is_junk = False
                 junk_exact = ['GENERIC', 'UNKNOWN', 'VARIOUS', 'MULTIPLE', 'NONE', 'N/A', 'CITYWIDE', 'COUNTYWIDE', 'THROUGHOUT', 'TBD', 'PENDING', 'UNNAMED', 'NO ADDRESS']
                 
@@ -198,7 +219,7 @@ if uploaded_files:
                 
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
-                    row['reason'] = "Vague Description / Missing Number"
+                    row['reason'] = "Vague Description / Failed Whitelist"
                     if is_local_ngc(row, target_city, target_county, target_state, target_zips):
                         ngcs_local.append(row)
                     else:
@@ -229,8 +250,17 @@ if uploaded_files:
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
-                        found_coords = (loc.latitude, loc.longitude)
-                        dist = geodesic(site_coords, found_coords).miles
+                        if tp_mode == "Single Point (Lat/Lon)":
+                            dist = geodesic(site_coords, (loc.latitude, loc.longitude)).miles
+                        else:
+                            site_pt = Point(loc.longitude, loc.latitude)
+                            local_crs = f"+proj=aeqd +lat_0={loc.latitude} +lon_0={loc.longitude} +datum=WGS84 +units=m"
+                            
+                            poly_proj = gpd.GeoSeries([tp_polygon], crs="EPSG:4326").to_crs(local_crs).iloc[0]
+                            pt_proj = gpd.GeoSeries([site_pt], crs="EPSG:4326").to_crs(local_crs).iloc[0]
+                            
+                            dist_meters = poly_proj.distance(pt_proj)
+                            dist = dist_meters * 0.000621371 
                         
                         row['mapped_lat'] = loc.latitude
                         row['mapped_lon'] = loc.longitude
@@ -270,6 +300,9 @@ if uploaded_files:
             st.session_state.ngcs_outside = ngcs_outside
             st.session_state.blank_addrs = blank_addrs
             st.session_state.run_complete = True
+            
+            if tp_mode == "Polygon Area":
+                st.session_state.tp_polygon = tp_polygon
 
 if st.session_state.run_complete:
     matches = st.session_state.matches
@@ -277,6 +310,7 @@ if st.session_state.run_complete:
     ngcs_local = st.session_state.ngcs_local
     ngcs_outside = st.session_state.ngcs_outside
     blank_addrs = st.session_state.blank_addrs
+    tp_polygon_saved = st.session_state.get('tp_polygon', None)
 
     st.divider()
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -319,24 +353,50 @@ if st.session_state.run_complete:
 
     layers = []
     
-    radius_in_meters = search_radius * 1609.34 
-    layers.append(pdk.Layer(
-        'ScatterplotLayer',
-        data=pd.DataFrame([{'lat': site_lat, 'lon': site_lon}]),
-        get_position='[lon, lat]',
-        get_color='[255, 0, 0, 30]', 
-        get_radius=radius_in_meters,
-        pickable=False
-    ))
-    
-    layers.append(pdk.Layer(
-        'ScatterplotLayer',
-        data=pd.DataFrame([{'lat': site_lat, 'lon': site_lon}]),
-        get_position='[lon, lat]',
-        get_color='[255, 0, 0, 255]', 
-        get_radius=120,
-        pickable=False
-    ))
+    if tp_mode == "Single Point (Lat/Lon)":
+        radius_in_meters = search_radius * 1609.34 
+        layers.append(pdk.Layer(
+            'ScatterplotLayer',
+            data=pd.DataFrame([{'lat': site_lat, 'lon': site_lon}]),
+            get_position='[lon, lat]',
+            get_color='[255, 0, 0, 30]', 
+            get_radius=radius_in_meters,
+            pickable=False
+        ))
+        layers.append(pdk.Layer(
+            'ScatterplotLayer',
+            data=pd.DataFrame([{'lat': site_lat, 'lon': site_lon}]),
+            get_position='[lon, lat]',
+            get_color='[255, 0, 0, 255]', 
+            get_radius=120,
+            pickable=False
+        ))
+    elif tp_polygon_saved:
+        tp_geojson = gpd.GeoSeries([tp_polygon_saved]).__geo_interface__
+        layers.append(pdk.Layer(
+            'GeoJsonLayer',
+            tp_geojson,
+            stroked=True,
+            filled=True,
+            get_fill_color=[255, 255, 0, 100],
+            get_line_color=[255, 255, 0, 255],
+            get_line_width=3,
+        ))
+        
+        metric_crs = f"+proj=aeqd +lat_0={map_center_lat} +lon_0={map_center_lon} +datum=WGS84 +units=m"
+        tp_proj_for_buffer = gpd.GeoSeries([tp_polygon_saved], crs="EPSG:4326").to_crs(metric_crs)
+        buffer_proj = tp_proj_for_buffer.buffer(search_radius * 1609.34)
+        buffer_geojson = buffer_proj.to_crs(epsg=4326).__geo_interface__
+        
+        layers.append(pdk.Layer(
+            'GeoJsonLayer',
+            buffer_geojson,
+            stroked=True,
+            filled=True,
+            get_fill_color=[255, 0, 0, 30],
+            get_line_color=[255, 0, 0, 150],
+            line_width_min_pixels=2,
+        ))
     
     if matches:
         layers.append(pdk.Layer(
@@ -370,15 +430,12 @@ if st.session_state.run_complete:
         tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
     ))
     
-    # --- 4. RESULTS TABLES ---
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
-        
         display_cols_matches = ['address', 'miles_from_site', 'mapped_lat', 'mapped_lon']
         for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st']:
             if col in df_matches.columns: display_cols_matches.insert(0, col)
-            
         display_cols_matches = list(dict.fromkeys(display_cols_matches))
         st.dataframe(df_matches.sort_values(by='miles_from_site')[display_cols_matches], use_container_width=True)
 
@@ -406,7 +463,6 @@ if st.session_state.run_complete:
             if col in df_blanks.columns: display_cols_blanks.insert(-2, col)
         st.dataframe(df_blanks[list(dict.fromkeys(display_cols_blanks))], use_container_width=True)
 
-    # --- 5. EXPORT ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
