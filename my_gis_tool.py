@@ -38,8 +38,10 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites).strip()
 
-    # --- 4. THE STRICT WHITELIST BOUNCER ---
-    whitelist_regex = r'^\s*\d{1,6}[A-Z]?\s+[A-Z0-9\s\.\-]*?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|HWY|HIGHWAY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE)\b'
+    # --- 4. THE STRICT WHITELIST BOUNCER (UPGRADED) ---
+    # Upgraded to allow hyphens in building numbers (e.g., 5933-A)
+    # Added BOULEVARD, PARKWAY, EXPRESSWAY, BRIDGE, and directionals (EAST, WEST, etc.)
+    whitelist_regex = r'^\s*\d{1,6}[A-Z\-]*\s+[A-Z0-9\s\.\-]*?\b(ST|AVE|RD|BLVD|BOULEVARD|DR|LN|WAY|PKWY|PARKWAY|HWY|HIGHWAY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE|EXPY|EXPRESSWAY|TRPK|TURNPIKE|BRIDGE|NORTH|SOUTH|EAST|WEST|N|S|E|W)\b'
     
     if re.search(whitelist_regex, addr_no_suites):
         return False 
@@ -116,7 +118,6 @@ with st.sidebar:
     st.divider()
     
     st.subheader("📍 Target Property Definition")
-    # --- UPGRADED: NEW MENU OPTION ---
     tp_mode = st.radio("How do you want to define the site?", [
         "Single Point (Lat/Lon)", 
         "Polygon Area (Upload File)", 
@@ -144,7 +145,6 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error reading shapefile. Details: {e}")
                 
-    # --- UPGRADED: TEXT PARSER ENGINE ---
     elif tp_mode == "Polygon Area (Paste GeoJSON)":
         st.caption("Paste a raw GeoJSON dictionary or coordinate array here.")
         coord_input = st.text_area("GeoJSON Data:", height=150)
@@ -152,17 +152,14 @@ with st.sidebar:
             try:
                 data = json.loads(coord_input)
                 
-                # Hunt for the geometry whether it's a FeatureCollection, Feature, or pure Geometry
                 if isinstance(data, dict) and data.get("type") == "FeatureCollection":
                     data = data["features"][0]["geometry"]
                 elif isinstance(data, dict) and data.get("type") == "Feature":
                     data = data["geometry"]
                 
-                # Build the polygon
                 if isinstance(data, dict) and "type" in data:
                     tp_polygon = shape(data)
                 elif isinstance(data, list):
-                    # Raw coordinate array fallback
                     tp_polygon = Polygon(data[0]) if isinstance(data[0][0], list) else Polygon(data)
                 
                 if tp_polygon and tp_polygon.is_valid:
