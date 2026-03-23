@@ -38,10 +38,9 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites).strip()
 
-    # --- 4. THE STRICT WHITELIST BOUNCER (UPGRADED) ---
-    # Upgraded to allow hyphens in building numbers (e.g., 5933-A)
-    # Added BOULEVARD, PARKWAY, EXPRESSWAY, BRIDGE, and directionals (EAST, WEST, etc.)
-    whitelist_regex = r'^\s*\d{1,6}[A-Z\-]*\s+[A-Z0-9\s\.\-]*?\b(ST|AVE|RD|BLVD|BOULEVARD|DR|LN|WAY|PKWY|PARKWAY|HWY|HIGHWAY|PIKE|ROAD|STREET|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE|EXPY|EXPRESSWAY|TRPK|TURNPIKE|BRIDGE|NORTH|SOUTH|EAST|WEST|N|S|E|W)\b'
+    # --- 4. THE STRICT WHITELIST BOUNCER (MASSIVELY EXPANDED) ---
+    # Added SQUARE, SQ, AVENUE, DRIVE, LANE, CORNERS, INDUSTRIAL, IND, and common typos like BLVE
+    whitelist_regex = r'^\s*\d{1,6}[A-Z\-]*\s+[A-Z0-9\s\.\-]*?\b(ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|BOULEVARD|BLVE|DR|DRIVE|LN|LANE|WAY|PKWY|PARKWAY|HWY|HIGHWAY|PIKE|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|SQ|SQUARE|CORNERS|INDUSTRIAL|IND|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE|EXPY|EXPRESSWAY|TRPK|TURNPIKE|BRIDGE|NORTH|SOUTH|EAST|WEST|N|S|E|W)\b'
     
     if re.search(whitelist_regex, addr_no_suites):
         return False 
