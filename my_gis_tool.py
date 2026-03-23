@@ -6,8 +6,9 @@ import io
 import pydeck as pdk
 import time
 import re
+import json
 import geopandas as gpd
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon, shape
 
 def is_vague_address(addr):
     addr = str(addr).upper().strip()
@@ -115,28 +116,65 @@ with st.sidebar:
     st.divider()
     
     st.subheader("📍 Target Property Definition")
-    tp_mode = st.radio("How do you want to define the site?", ["Single Point (Lat/Lon)", "Polygon Area (Zipped Shapefile / GeoJSON)"])
+    # --- UPGRADED: NEW MENU OPTION ---
+    tp_mode = st.radio("How do you want to define the site?", [
+        "Single Point (Lat/Lon)", 
+        "Polygon Area (Upload File)", 
+        "Polygon Area (Paste GeoJSON)"
+    ])
     
-    site_lat, site_lon = 33.927600, -84.247200 # Defaults
+    site_lat, site_lon = 33.927600, -84.247200 
     tp_polygon = None
-    tp_polygon_gdf = None
     
     if tp_mode == "Single Point (Lat/Lon)":
         site_lat = st.number_input("Site Latitude", format="%.6f", value=33.927600)
         site_lon = st.number_input("Site Longitude", format="%.6f", value=-84.247200)
-    else:
-        st.caption("Upload a .zip file containing your shapefile (.shp, .shx, .dbf, .prj) OR a .geojson file.")
+        
+    elif tp_mode == "Polygon Area (Upload File)":
+        st.caption("Upload a .zip file containing your shapefile OR a .geojson file.")
         tp_file = st.file_uploader("Upload Area Polygon", type=["zip", "geojson"])
         if tp_file:
             try:
                 tp_polygon_gdf = gpd.read_file(tp_file)
-                tp_polygon_gdf = tp_polygon_gdf.to_crs(epsg=4326) # Ensure WGS84
+                tp_polygon_gdf = tp_polygon_gdf.to_crs(epsg=4326) 
                 tp_polygon = tp_polygon_gdf.geometry.unary_union
                 site_lat = tp_polygon.centroid.y
                 site_lon = tp_polygon.centroid.x
                 st.success("Polygon successfully loaded!")
             except Exception as e:
-                st.error(f"Error reading shapefile. Ensure it is zipped properly. Details: {e}")
+                st.error(f"Error reading shapefile. Details: {e}")
+                
+    # --- UPGRADED: TEXT PARSER ENGINE ---
+    elif tp_mode == "Polygon Area (Paste GeoJSON)":
+        st.caption("Paste a raw GeoJSON dictionary or coordinate array here.")
+        coord_input = st.text_area("GeoJSON Data:", height=150)
+        if coord_input:
+            try:
+                data = json.loads(coord_input)
+                
+                # Hunt for the geometry whether it's a FeatureCollection, Feature, or pure Geometry
+                if isinstance(data, dict) and data.get("type") == "FeatureCollection":
+                    data = data["features"][0]["geometry"]
+                elif isinstance(data, dict) and data.get("type") == "Feature":
+                    data = data["geometry"]
+                
+                # Build the polygon
+                if isinstance(data, dict) and "type" in data:
+                    tp_polygon = shape(data)
+                elif isinstance(data, list):
+                    # Raw coordinate array fallback
+                    tp_polygon = Polygon(data[0]) if isinstance(data[0][0], list) else Polygon(data)
+                
+                if tp_polygon and tp_polygon.is_valid:
+                    site_lat = tp_polygon.centroid.y
+                    site_lon = tp_polygon.centroid.x
+                    st.success("Coordinates successfully mapped into a Polygon!")
+                else:
+                    st.error("Data parsed, but it does not form a valid Polygon.")
+            except json.JSONDecodeError:
+                st.error("Invalid JSON format. Make sure you copied the full bracket sequence.")
+            except Exception as e:
+                st.error(f"Could not build polygon: {e}")
 
     search_radius = st.slider("Search Radius (Miles)", 0.1, 2.0, 0.5)
     
@@ -160,8 +198,8 @@ uploaded_files = st.file_uploader("📂 Drop ESA Files Here (Excel/CSV)", type=[
 
 if uploaded_files:
     if st.button("🚀 Run Analysis"):
-        if tp_mode == "Polygon Area" and not tp_polygon:
-            st.error("Please upload a Polygon zip file or switch back to Single Point mode.")
+        if "Polygon" in tp_mode and not tp_polygon:
+            st.error("Please upload or paste your Polygon data, or switch back to Single Point mode.")
             st.stop()
             
         geolocator = ArcGIS()
@@ -249,7 +287,7 @@ if uploaded_files:
                 try:
                     loc = geolocator.geocode(full_search_address, timeout=10)
                     if loc:
-                        if tp_mode == "Single Point (Lat/Lon)":
+                        if "Polygon" not in tp_mode:
                             dist = geodesic(site_coords, (loc.latitude, loc.longitude)).miles
                         else:
                             site_pt = Point(loc.longitude, loc.latitude)
@@ -300,7 +338,7 @@ if uploaded_files:
             st.session_state.blank_addrs = blank_addrs
             st.session_state.run_complete = True
             
-            if tp_mode == "Polygon Area":
+            if "Polygon" in tp_mode:
                 st.session_state.tp_polygon = tp_polygon
 
 if st.session_state.run_complete:
@@ -352,7 +390,7 @@ if st.session_state.run_complete:
 
     layers = []
     
-    if tp_mode == "Single Point (Lat/Lon)":
+    if "Polygon" not in tp_mode:
         radius_in_meters = search_radius * 1609.34 
         layers.append(pdk.Layer(
             'ScatterplotLayer',
