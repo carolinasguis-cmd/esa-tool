@@ -75,7 +75,7 @@ def scrub_address_for_arcgis(addr):
     addr = re.sub(r'\bCOUR\b', 'COURT', addr)
     return " ".join(addr.split())
 
-# --- NEW: 3-TIER CITY SORTING LOGIC ---
+# --- 3-TIER CITY SORTING LOGIC ---
 def get_local_match_tier(row, t_city, t_county, t_state, t_zips_list):
     r_city = next((clean_string(row[c]).upper() for c in row.index if c in ['city', 'site city', 'site_city']), "")
     r_county = next((clean_string(row[c]).upper() for c in row.index if c in ['county', 'site county', 'site_county']), "")
@@ -87,7 +87,6 @@ def get_local_match_tier(row, t_city, t_county, t_state, t_zips_list):
             r_zip = clean_string(row[col])
             break
 
-    # Step 1: Prove it belongs in the Local list AT ALL (Matches City, Zip, County, or State)
     is_local = False
     
     if r_zip and t_zips_list:
@@ -108,15 +107,14 @@ def get_local_match_tier(row, t_city, t_county, t_state, t_zips_list):
         is_local = True
         
     if not is_local:
-        return 0 # Tier 0: Fails all checks. Sent to Outside Orphans.
+        return 0 
 
-    # Step 2: Assign the specific City Priority Tier
     if t_city and r_city and (t_city in r_city or r_city in t_city):
-        return 1 # Tier 1: Target City matches Record City
+        return 1 
     elif not r_city:
-        return 2 # Tier 2: The Record City is completely blank
+        return 2 
     else:
-        return 3 # Tier 3: Has a City, but it is not the Target City
+        return 3 
 
 st.set_page_config(page_title="GIS Phase I ESA Agent", layout="wide", page_icon="📍")
 
@@ -509,8 +507,9 @@ if st.session_state.run_complete:
         st.subheader("🟡 Local Orphans (City, County, State, or Zip Matches)")
         df_ngc_local = pd.DataFrame(ngcs_local)
         
-        # --- NEW: SORT BY TIER ---
-        df_ngc_local = df_ngc_local.sort_values(by='local_sort_tier')
+        # --- SAFE SORT BY TIER ---
+        if 'local_sort_tier' in df_ngc_local.columns:
+            df_ngc_local = df_ngc_local.sort_values(by='local_sort_tier')
         
         display_cols_local = ['address', 'reason']
         for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
@@ -538,8 +537,12 @@ if st.session_state.run_complete:
         if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
         if oob: pd.DataFrame(oob).to_excel(writer, sheet_name="Out_of_Bounds", index=False)
         
-        # Drop the invisible sort tier from the excel file so it stays clean
-        if ngcs_local: pd.DataFrame(ngcs_local).sort_values(by='local_sort_tier').drop(columns=['local_sort_tier'], errors='ignore').to_excel(writer, sheet_name="Local_Orphans", index=False)
+        if ngcs_local: 
+            df_export_local = pd.DataFrame(ngcs_local)
+            if 'local_sort_tier' in df_export_local.columns:
+                df_export_local = df_export_local.sort_values(by='local_sort_tier').drop(columns=['local_sort_tier'])
+            df_export_local.to_excel(writer, sheet_name="Local_Orphans", index=False)
+            
         if ngcs_outside: pd.DataFrame(ngcs_outside).to_excel(writer, sheet_name="Outside_Orphans", index=False)
         if blank_addrs: pd.DataFrame(blank_addrs).to_excel(writer, sheet_name="Blank_Addresses", index=False)
     
