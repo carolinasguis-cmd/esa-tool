@@ -23,8 +23,10 @@ def is_vague_address(addr):
     if not re.search(r'[A-Z]', addr): return True
     if re.search(r'\b(PO BOX|P\.O\. BOX|P O BOX)\b', addr): return True
     
-    # 2. ACREAGE & MULTIPLE ADDRESS CATCHER
-    if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES)\b', addr): return True
+    # 2. THE MEASUREMENT CATCHER (Kills Acres, Feet, Miles, Yards)
+    if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES|MILE|MILES|MI\b|FT\b|FEET\b|YARD|YARDS|YDS\b)\b', addr): return True
+    
+    # MULTIPLE ADDRESS CATCHER
     address_blocks = re.findall(r'\b\d+\s+[A-Z\s]+?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|ROAD|STREET)\b', addr)
     if len(address_blocks) > 1: return True
 
@@ -38,8 +40,7 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites).strip()
 
-    # --- 4. THE STRICT WHITELIST BOUNCER (MASSIVELY EXPANDED) ---
-    # Added SQUARE, SQ, AVENUE, DRIVE, LANE, CORNERS, INDUSTRIAL, IND, and common typos like BLVE
+    # 4. THE STRICT WHITELIST BOUNCER
     whitelist_regex = r'^\s*\d{1,6}[A-Z\-]*\s+[A-Z0-9\s\.\-]*?\b(ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|BOULEVARD|BLVE|DR|DRIVE|LN|LANE|WAY|PKWY|PARKWAY|HWY|HIGHWAY|PIKE|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|SQ|SQUARE|CORNERS|INDUSTRIAL|IND|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE|EXPY|EXPRESSWAY|TRPK|TURNPIKE|BRIDGE|NORTH|SOUTH|EAST|WEST|N|S|E|W)\b'
     
     if re.search(whitelist_regex, addr_no_suites):
@@ -463,6 +464,7 @@ if st.session_state.run_complete:
         tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
     ))
     
+    # --- 4. RESULTS TABLES ---
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
@@ -471,6 +473,16 @@ if st.session_state.run_complete:
             if col in df_matches.columns: display_cols_matches.insert(0, col)
         display_cols_matches = list(dict.fromkeys(display_cols_matches))
         st.dataframe(df_matches.sort_values(by='miles_from_site')[display_cols_matches], use_container_width=True)
+
+    # --- NEW: OUT OF BOUNDS TABLE ---
+    if oob:
+        st.subheader("⚠️ Out of Bounds (Beyond Search Radius)")
+        df_oob = pd.DataFrame(oob)
+        display_cols_oob = ['address', 'miles_from_site', 'mapped_lat', 'mapped_lon']
+        for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st']:
+            if col in df_oob.columns: display_cols_oob.insert(0, col)
+        display_cols_oob = list(dict.fromkeys(display_cols_oob))
+        st.dataframe(df_oob.sort_values(by='miles_from_site')[display_cols_oob], use_container_width=True)
 
     if ngcs_local:
         st.subheader("🟡 Local Orphans (City, County, State, or Zip Matches)")
