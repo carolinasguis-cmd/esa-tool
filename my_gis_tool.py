@@ -23,7 +23,7 @@ def is_vague_address(addr):
     if not re.search(r'[A-Z]', addr): return True
     if re.search(r'\b(PO BOX|P\.O\. BOX|P O BOX)\b', addr): return True
     
-    # 2. THE MEASUREMENT CATCHER (Kills Acres, Feet, Miles, Yards)
+    # 2. THE MEASUREMENT CATCHER
     if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES|MILE|MILES|MI\b|FT\b|FEET\b|YARD|YARDS|YDS\b)\b', addr): return True
     
     # MULTIPLE ADDRESS CATCHER
@@ -75,7 +75,8 @@ def scrub_address_for_arcgis(addr):
     addr = re.sub(r'\bCOUR\b', 'COURT', addr)
     return " ".join(addr.split())
 
-def is_local_ngc(row, t_city, t_county, t_state, t_zips_list):
+# --- NEW: 3-TIER CITY SORTING LOGIC ---
+def get_local_match_tier(row, t_city, t_county, t_state, t_zips_list):
     r_city = next((clean_string(row[c]).upper() for c in row.index if c in ['city', 'site city', 'site_city']), "")
     r_county = next((clean_string(row[c]).upper() for c in row.index if c in ['county', 'site county', 'site_county']), "")
     r_state = next((clean_string(row[c]).upper() for c in row.index if c in ['state', 'st', 'site state', 'site_state']), "")
@@ -86,22 +87,36 @@ def is_local_ngc(row, t_city, t_county, t_state, t_zips_list):
             r_zip = clean_string(row[col])
             break
 
+    # Step 1: Prove it belongs in the Local list AT ALL (Matches City, Zip, County, or State)
+    is_local = False
+    
     if r_zip and t_zips_list:
-        match_found = False
         for z in t_zips_list:
             if z in r_zip or r_zip in z:
-                match_found = True
+                is_local = True
                 break
-        return match_found 
-
+                
+    if not is_local and t_city and r_city and (t_city in r_city or r_city in t_city):
+        is_local = True
+        
     t_county_clean = t_county.replace(" COUNTY", "").strip() if t_county else ""
     r_county_clean = r_county.replace(" COUNTY", "").strip() if r_county else ""
+    if not is_local and t_county_clean and r_county_clean and (t_county_clean in r_county_clean or r_county_clean in t_county_clean):
+        is_local = True
+        
+    if not is_local and t_state and r_state and (t_state == r_state or t_state in r_state or r_state in t_state):
+        is_local = True
+        
+    if not is_local:
+        return 0 # Tier 0: Fails all checks. Sent to Outside Orphans.
 
-    if t_city and r_city and (t_city in r_city or r_city in t_city): return True
-    if t_county_clean and r_county_clean and (t_county_clean in r_county_clean or r_county_clean in t_county_clean): return True
-    if t_state and r_state and (t_state == r_state or t_state in r_state or r_state in t_state): return True
-    
-    return False
+    # Step 2: Assign the specific City Priority Tier
+    if t_city and r_city and (t_city in r_city or r_city in t_city):
+        return 1 # Tier 1: Target City matches Record City
+    elif not r_city:
+        return 2 # Tier 2: The Record City is completely blank
+    else:
+        return 3 # Tier 3: Has a City, but it is not the Target City
 
 st.set_page_config(page_title="GIS Phase I ESA Agent", layout="wide", page_icon="📍")
 
@@ -254,7 +269,10 @@ if uploaded_files:
                 if is_vague_address(addr):
                     row['status'] = "NGC (Orphan)"
                     row['reason'] = "Vague Description / Failed Whitelist"
-                    if is_local_ngc(row, target_city, target_county, target_state, target_zips):
+                    
+                    match_tier = get_local_match_tier(row, target_city, target_county, target_state, target_zips)
+                    if match_tier > 0:
+                        row['local_sort_tier'] = match_tier
                         ngcs_local.append(row)
                     else:
                         ngcs_outside.append(row)
@@ -311,14 +329,19 @@ if uploaded_files:
                     else:
                         row['status'] = "NGC (Not Found)"
                         row['reason'] = "Address not found by ArcGIS"
-                        if is_local_ngc(row, target_city, target_county, target_state, target_zips):
+                        
+                        match_tier = get_local_match_tier(row, target_city, target_county, target_state, target_zips)
+                        if match_tier > 0:
+                            row['local_sort_tier'] = match_tier
                             ngcs_local.append(row)
                         else:
                             ngcs_outside.append(row)
                 except Exception as e:
                     row['status'] = "Error"
                     row['reason'] = str(e)
-                    if is_local_ngc(row, target_city, target_county, target_state, target_zips):
+                    match_tier = get_local_match_tier(row, target_city, target_county, target_state, target_zips)
+                    if match_tier > 0:
+                        row['local_sort_tier'] = match_tier
                         ngcs_local.append(row)
                     else:
                         ngcs_outside.append(row)
@@ -464,7 +487,6 @@ if st.session_state.run_complete:
         tooltip={"text": "{address}\nDistance: {miles_from_site} mi\nStatus: {status}\nSite ID: {site_id}"}
     ))
     
-    # --- 4. RESULTS TABLES ---
     if matches:
         st.subheader("✅ Mapped Sites (Within Radius)")
         df_matches = pd.DataFrame(matches)
@@ -474,7 +496,6 @@ if st.session_state.run_complete:
         display_cols_matches = list(dict.fromkeys(display_cols_matches))
         st.dataframe(df_matches.sort_values(by='miles_from_site')[display_cols_matches], use_container_width=True)
 
-    # --- NEW: OUT OF BOUNDS TABLE ---
     if oob:
         st.subheader("⚠️ Out of Bounds (Beyond Search Radius)")
         df_oob = pd.DataFrame(oob)
@@ -487,6 +508,10 @@ if st.session_state.run_complete:
     if ngcs_local:
         st.subheader("🟡 Local Orphans (City, County, State, or Zip Matches)")
         df_ngc_local = pd.DataFrame(ngcs_local)
+        
+        # --- NEW: SORT BY TIER ---
+        df_ngc_local = df_ngc_local.sort_values(by='local_sort_tier')
+        
         display_cols_local = ['address', 'reason']
         for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_ngc_local.columns: display_cols_local.insert(-2, col)
@@ -512,7 +537,9 @@ if st.session_state.run_complete:
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if matches: pd.DataFrame(matches).to_excel(writer, sheet_name="Matches", index=False)
         if oob: pd.DataFrame(oob).to_excel(writer, sheet_name="Out_of_Bounds", index=False)
-        if ngcs_local: pd.DataFrame(ngcs_local).to_excel(writer, sheet_name="Local_Orphans", index=False)
+        
+        # Drop the invisible sort tier from the excel file so it stays clean
+        if ngcs_local: pd.DataFrame(ngcs_local).sort_values(by='local_sort_tier').drop(columns=['local_sort_tier'], errors='ignore').to_excel(writer, sheet_name="Local_Orphans", index=False)
         if ngcs_outside: pd.DataFrame(ngcs_outside).to_excel(writer, sheet_name="Outside_Orphans", index=False)
         if blank_addrs: pd.DataFrame(blank_addrs).to_excel(writer, sheet_name="Blank_Addresses", index=False)
     
