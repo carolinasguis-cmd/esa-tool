@@ -23,8 +23,10 @@ def is_vague_address(addr):
     if not re.search(r'[A-Z]', addr): return True
     if re.search(r'\b(PO BOX|P\.O\. BOX|P O BOX)\b', addr): return True
     
-    # 2. THE MEASUREMENT CATCHER
+    # 2. THE NEW KILL-SWITCHES
+    if re.search(r'^\s*\d+(ST|ND|RD|TH)\b', addr): return True
     if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES|MILE|MILES|MI\b|FT\b|FEET\b|YARD|YARDS|YDS\b)\b', addr): return True
+    if re.search(r'\b(OVERPASS|UNDERPASS|OUTFALL|DITCH|TRIBUTARY|INTERCHANGE|TOLL PLAZA)\b', addr): return True
     
     # MULTIPLE ADDRESS CATCHER
     address_blocks = re.findall(r'\b\d+\s+[A-Z\s]+?\b(ST|AVE|RD|BLVD|DR|LN|WAY|PKWY|ROAD|STREET)\b', addr)
@@ -507,12 +509,12 @@ if st.session_state.run_complete:
         st.subheader("🟡 Local Orphans (City, County, State, or Zip Matches)")
         df_ngc_local = pd.DataFrame(ngcs_local)
         
-        # --- SAFE SORT BY TIER ---
         if 'local_sort_tier' in df_ngc_local.columns:
             df_ngc_local = df_ngc_local.sort_values(by='local_sort_tier')
         
         display_cols_local = ['address', 'reason']
-        for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
+        # --- ADDED SITE_NAME HERE ---
+        for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_ngc_local.columns: display_cols_local.insert(-2, col)
         st.dataframe(df_ngc_local[list(dict.fromkeys(display_cols_local))], use_container_width=True)
 
@@ -520,7 +522,8 @@ if st.session_state.run_complete:
         st.subheader("❌ Outside Orphans (No Location Match)")
         df_ngc_outside = pd.DataFrame(ngcs_outside)
         display_cols_outside = ['address', 'reason']
-        for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
+        # --- ADDED SITE_NAME HERE ---
+        for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_ngc_outside.columns: display_cols_outside.insert(-2, col)
         st.dataframe(df_ngc_outside[list(dict.fromkeys(display_cols_outside))], use_container_width=True)
         
@@ -528,7 +531,8 @@ if st.session_state.run_complete:
         st.subheader("🗑️ Blank Addresses (Unmappable)")
         df_blanks = pd.DataFrame(blank_addrs)
         display_cols_blanks = ['address', 'reason']
-        for col in ['site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
+        # --- ADDED SITE_NAME HERE ---
+        for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_blanks.columns: display_cols_blanks.insert(-2, col)
         st.dataframe(df_blanks[list(dict.fromkeys(display_cols_blanks))], use_container_width=True)
 
