@@ -23,7 +23,7 @@ def is_vague_address(addr):
     if not re.search(r'[A-Z]', addr): return True
     if re.search(r'\b(PO BOX|P\.O\. BOX|P O BOX)\b', addr): return True
     
-    # 2. THE NEW KILL-SWITCHES
+    # 2. THE KILL-SWITCHES
     if re.search(r'^\s*\d+(ST|ND|RD|TH)\b', addr): return True
     if re.search(r'\b\d+(\.\d+)?\s*(ACRE|ACRES|MILE|MILES|MI\b|FT\b|FEET\b|YARD|YARDS|YDS\b)\b', addr): return True
     if re.search(r'\b(OVERPASS|UNDERPASS|OUTFALL|DITCH|TRIBUTARY|INTERCHANGE|TOLL PLAZA)\b', addr): return True
@@ -42,10 +42,12 @@ def is_vague_address(addr):
     addr_no_suites = re.sub(r'\b(SUITE|STE|UNIT|BLDG|BUILDING|APT|RM|ROOM)\s+[A-Z0-9-]+\b', '', addr_core)
     addr_no_suites = re.sub(r'#\s*[A-Z0-9-]+', '', addr_no_suites).strip()
 
-    # 4. THE STRICT WHITELIST BOUNCER
-    whitelist_regex = r'^\s*\d{1,6}[A-Z\-]*\s+[A-Z0-9\s\.\-]*?\b(ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|BOULEVARD|BLVE|DR|DRIVE|LN|LANE|WAY|PKWY|PARKWAY|HWY|HIGHWAY|PIKE|CIR|CIRCLE|CT|COURT|PL|PLACE|TRL|TRAIL|SQ|SQUARE|CORNERS|INDUSTRIAL|IND|US|I|IH|SH|FM|RM|TX|SR|CR|CO RD|COUNTY ROAD|PR|RTE|RT|SPUR|LOOP|INTERSTATE|EXPY|EXPRESSWAY|TRPK|TURNPIKE|BRIDGE|NORTH|SOUTH|EAST|WEST|N|S|E|W)\b'
+    # --- 4. THE STRUCTURE BOUNCER (REPLACED DICTIONARY) ---
+    # As long as it starts with a building number (1-6 digits, optional letters/hyphens) 
+    # and has a street name/word following it, it passes.
+    basic_structure_regex = r'^\s*\d{1,6}[A-Z\-]*\s+[A-Z0-9]'
     
-    if re.search(whitelist_regex, addr_no_suites):
+    if re.search(basic_structure_regex, addr_no_suites):
         return False 
         
     return True 
@@ -513,7 +515,6 @@ if st.session_state.run_complete:
             df_ngc_local = df_ngc_local.sort_values(by='local_sort_tier')
         
         display_cols_local = ['address', 'reason']
-        # --- ADDED SITE_NAME HERE ---
         for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_ngc_local.columns: display_cols_local.insert(-2, col)
         st.dataframe(df_ngc_local[list(dict.fromkeys(display_cols_local))], use_container_width=True)
@@ -522,7 +523,6 @@ if st.session_state.run_complete:
         st.subheader("❌ Outside Orphans (No Location Match)")
         df_ngc_outside = pd.DataFrame(ngcs_outside)
         display_cols_outside = ['address', 'reason']
-        # --- ADDED SITE_NAME HERE ---
         for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_ngc_outside.columns: display_cols_outside.insert(-2, col)
         st.dataframe(df_ngc_outside[list(dict.fromkeys(display_cols_outside))], use_container_width=True)
@@ -531,7 +531,6 @@ if st.session_state.run_complete:
         st.subheader("🗑️ Blank Addresses (Unmappable)")
         df_blanks = pd.DataFrame(blank_addrs)
         display_cols_blanks = ['address', 'reason']
-        # --- ADDED SITE_NAME HERE ---
         for col in ['site_name', 'site name', 'site id', 'site_id', 'city', 'county', 'state', 'st', 'zip', 'zipcode']:
             if col in df_blanks.columns: display_cols_blanks.insert(-2, col)
         st.dataframe(df_blanks[list(dict.fromkeys(display_cols_blanks))], use_container_width=True)
